@@ -18,6 +18,8 @@
 
 ### Fixed
 - The command that builds a local price snapshot creates its folder.
+- The release workflow can be rerun, for example after a failed upload to PyPI. It
+  uploads the files to the existing GitHub release instead of failing to create it.
 
 ### Security
 - Text from links, uploads and data sources is shown as plain text, and tickers in links
