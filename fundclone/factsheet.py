@@ -1,7 +1,9 @@
 """Pull identifiers out of a fund factsheet PDF to help find its Yahoo Finance ticker.
 
 PDFs from users are untrusted: parse_factsheet_safely reads them in a separate process with
-limits on pages, memory and processor time, so a malicious file cannot exhaust the web app.
+limits on pages, memory, processor time and wall-clock time, so a malicious file cannot
+exhaust the web app. The memory limit needs Linux, where the hosted app runs: macOS
+enforces only the processor-time limit, and Windows only the wall-clock timeout.
 """
 
 from __future__ import annotations
@@ -54,17 +56,20 @@ def parse_factsheet(pdf: str | BinaryIO, max_pages: int = MAX_PAGES) -> dict:
 
     Use parse_factsheet_safely for files from untrusted sources.
     """
-    import pdfplumber  # optional dependency, installed with the "app" extra
+    if max_pages < 1:  # pdfminer reads every page for maxpages=0
+        raise ValueError("max_pages must be at least 1.")
+    # pdfminer.six is an optional dependency, installed with the "app" extra. It stops after
+    # `maxpages`; pdfplumber sets up every page of the file, at the latest when closing it.
+    from pdfminer.high_level import extract_text
 
-    with pdfplumber.open(pdf) as document:
-        text = "\n".join(page.extract_text() or "" for page in document.pages[:max_pages])
-    return parse_factsheet_text(text)
+    return parse_factsheet_text(extract_text(pdf, maxpages=max_pages))
 
 
 def parse_factsheet_safely(pdf: bytes, timeout: float = 20.0) -> dict:
     """parse_factsheet on untrusted PDF bytes, in a separate Python process that may use at
-    most MEMORY_LIMIT_MB of memory (where the system enforces the limit) and CPU_SECONDS of
-    processor time. Raises ValueError when the PDF cannot be read within those limits."""
+    most MEMORY_LIMIT_MB of memory, CPU_SECONDS of processor time and `timeout` seconds, as
+    far as the operating system enforces them (see the module docstring). Raises ValueError
+    when the PDF cannot be read within those limits."""
     # Runs this file alone, without importing the package or putting its folder on sys.path.
     child = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='__main__')"
     try:

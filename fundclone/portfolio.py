@@ -49,6 +49,8 @@ def parse_portfolio(text: str) -> dict[str, float]:
     if any(len(ticker) > MAX_TICKER_LENGTH for ticker in weights):
         raise ValueError(f"Tickers have at most {MAX_TICKER_LENGTH} characters.")
     total = sum(weights.values())
+    if not math.isfinite(total):  # a weight with hundreds of digits parses as infinity
+        raise ValueError("Weights must be ordinary numbers, such as 60 or 12.5.")
     if total <= 0:
         raise ValueError("Enter at least one holding with a positive weight.")
     return {ticker: weight / total for ticker, weight in weights.items()}
