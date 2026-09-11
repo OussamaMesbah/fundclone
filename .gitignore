@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Benchmark price snapshots (rebuild with python -m benchmarks.download)
+benchmarks/data/
+
+# Local settings
+.DS_Store
+.streamlit/secrets.toml
