@@ -1,0 +1,65 @@
+ticker,name,category,split,legacy_universe
+FCNTX,Fidelity Contrafund,US large-cap,dev,US equity: style ETFs
+AGTHX,American Funds Growth Fund of America,US large-cap,holdout,US equity: style ETFs
+DODGX,Dodge & Cox Stock,US large-cap,dev,US equity: style ETFs
+TRBCX,T. Rowe Price Blue Chip Growth,US large-cap,holdout,US equity: style ETFs
+VPMCX,Vanguard PRIMECAP,US large-cap,dev,US equity: style ETFs
+FMAGX,Fidelity Magellan,US large-cap,holdout,US equity: style ETFs
+OAKMX,Oakmark Fund,US large-cap,dev,US equity: style ETFs
+VWNFX,Vanguard Windsor II,US large-cap,holdout,US equity: style ETFs
+PRBLX,Parnassus Core Equity,US large-cap,dev,US equity: style ETFs
+AIVSX,American Funds Investment Company of America,US large-cap,holdout,US equity: style ETFs
+FLPSX,Fidelity Low-Priced Stock,US small/mid-cap,dev,US equity: style ETFs
+PENNX,Royce Pennsylvania Mutual,US small/mid-cap,holdout,US equity: style ETFs
+VEXPX,Vanguard Explorer,US small/mid-cap,dev,US equity: style ETFs
+BSCFX,Baron Small Cap,US small/mid-cap,holdout,US equity: style ETFs
+DODFX,Dodge & Cox International Stock,International,dev,Global equity
+OAKIX,Oakmark International,International,holdout,Global equity
+VWIGX,Vanguard International Growth,International,dev,Global equity
+AEPGX,American Funds EuroPacific Growth,International,holdout,Global equity
+ARTKX,Artisan International Value,International,dev,Global equity
+HAINX,Harbor International,International,holdout,Global equity
+ANWPX,American Funds New Perspective,Global,dev,Global equity
+PTTRX,PIMCO Total Return,Bond,dev,Fixed income
+DODIX,Dodge & Cox Income,Bond,holdout,Fixed income
+MWTRX,Metropolitan West Total Return Bond,Bond,dev,Fixed income
+VBTLX,Vanguard Total Bond Market Index,Bond,holdout,Fixed income
+FTBFX,Fidelity Total Bond,Bond,dev,Fixed income
+LSBRX,Loomis Sayles Bond,Bond,holdout,Fixed income
+VWELX,Vanguard Wellington,Balanced,dev,Multi-asset
+PRWCX,T. Rowe Price Capital Appreciation,Balanced,holdout,Multi-asset
+DODBX,Dodge & Cox Balanced,Balanced,dev,Multi-asset
+ABALX,American Funds American Balanced,Balanced,holdout,Multi-asset
+FBALX,Fidelity Balanced,Balanced,dev,Multi-asset
+VWINX,Vanguard Wellesley Income,Balanced,holdout,Multi-asset
+FSELX,Fidelity Select Semiconductors,Sector,dev,US equity: style ETFs
+VGHCX,Vanguard Health Care,Sector,holdout,US equity: style ETFs
+ARKK,ARK Innovation ETF,Sector,dev,US equity: style ETFs
+FBIOX,Fidelity Select Biotechnology,Sector,holdout,US equity: style ETFs
+VFIAX,Vanguard 500 Index,Index,dev,US equity: style ETFs
+VTSAX,Vanguard Total Stock Market Index,Index,holdout,US equity: style ETFs
+VGTSX,Vanguard Total International Stock Index,Index,dev,Global equity
+BRK-B,Berkshire Hathaway (single stock),Single stock,holdout,US equity: style ETFs
+AMCPX,American Funds AMCAP,US large-cap,fresh,US equity: style ETFs
+AWSHX,American Funds Washington Mutual,US large-cap,fresh,US equity: style ETFs
+PRGFX,T. Rowe Price Growth Stock,US large-cap,fresh,US equity: style ETFs
+FDGRX,Fidelity Growth Company,US large-cap,fresh,US equity: style ETFs
+VDIGX,Vanguard Dividend Growth,US large-cap,fresh,US equity: style ETFs
+RPMGX,T. Rowe Price Mid-Cap Growth,US small/mid-cap,fresh,US equity: style ETFs
+TRMCX,T. Rowe Price Mid-Cap Value,US small/mid-cap,fresh,US equity: style ETFs
+PRNHX,T. Rowe Price New Horizons,US small/mid-cap,fresh,US equity: style ETFs
+VTRIX,Vanguard International Value,International,fresh,Global equity
+TROSX,T. Rowe Price Overseas Stock,International,fresh,Global equity
+FDIVX,Fidelity Diversified International,International,fresh,Global equity
+ODMAX,Invesco Developing Markets,International,fresh,Global equity
+CWGIX,American Funds Capital World Growth and Income,Global,fresh,Global equity
+PIMIX,PIMCO Income,Bond,fresh,Fixed income
+DBLTX,DoubleLine Total Return Bond,Bond,fresh,Fixed income
+TGLMX,TCW Securitized Bond (formerly TCW Total Return Bond),Bond,fresh,Fixed income
+AMECX,American Funds Income Fund of America,Balanced,fresh,Multi-asset
+FPURX,Fidelity Puritan,Balanced,fresh,Multi-asset
+RPBAX,T. Rowe Price Balanced,Balanced,fresh,Multi-asset
+FSPTX,Fidelity Select Technology,Sector,fresh,US equity: style ETFs
+PRHSX,T. Rowe Price Health Sciences,Sector,fresh,US equity: style ETFs
+VGENX,Vanguard Energy Opportunities (formerly Vanguard Energy),Sector,fresh,US equity: style ETFs
+FXAIX,Fidelity 500 Index,Index,fresh,US equity: style ETFs
