@@ -7,15 +7,15 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
-from factorlens import etfs
-from factorlens.attribution import (
+from fundclone import etfs
+from fundclone.attribution import (
     BOND_FACTOR_TICKERS,
     AttributionResult,
     bond_factors,
     factor_regression,
     rolling_betas,
 )
-from factorlens.data import (
+from fundclone.data import (
     FF6,
     adjust_splits,
     compounded_rate,
@@ -31,10 +31,10 @@ from factorlens.data import (
     to_usd,
     weekly_returns,
 )
-from factorlens.estimators import make_estimator
-from factorlens.metrics import TRADING_DAYS, WEEKS_PER_YEAR, benchmark_fit, performance, tracking
-from factorlens.portfolio import portfolio_returns
-from factorlens.replication import ReplicationConfig, ReplicationResult, walk_forward
+from fundclone.estimators import make_estimator
+from fundclone.metrics import TRADING_DAYS, WEEKS_PER_YEAR, benchmark_fit, performance, tracking
+from fundclone.portfolio import portfolio_returns
+from fundclone.replication import ReplicationConfig, ReplicationResult, walk_forward
 
 PERIODS_PER_YEAR = {"monthly": 12, "daily": TRADING_DAYS}
 TRADING_DAYS_PER_MONTH = 21
@@ -139,7 +139,8 @@ def run_analysis(
     clone may use (see etfs.ASSET_CLASSES). The factor model's `region` and whether it
     includes term and credit factors default to what the clone holds. A replication
     frequency of "auto" becomes weekly when anything is priced outside US trading hours.
-    The loaders can be replaced by cached or offline versions with the same signatures.
+    The loaders can be replaced by cached or offline versions with the same signatures; a
+    price loader can pass notes for the user on in the returned frame's attrs["notes"].
     """
     config = replication or ReplicationConfig()
     notes: list[str] = []
@@ -175,6 +176,7 @@ def run_analysis(
     tickers = [*members, *universe, *BOND_FACTOR_TICKERS, *fx]
     end_exclusive = (pd.Timestamp(end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
     prices = price_loader(tickers, start, end_exclusive)
+    notes.extend(prices.attrs.get("notes", []))
     universe = [ticker for ticker in universe if ticker in prices]
 
     missing = [t for t in members if t not in prices or prices[t].dropna().empty]

@@ -9,13 +9,13 @@ import re
 
 import pandas as pd
 
-from factorlens import etfs
-from factorlens.analysis import run_analysis
-from factorlens.attribution import FACTOR_NAMES
-from factorlens.data import REGIONS
-from factorlens.portfolio import parse_portfolio
-from factorlens.replication import ReplicationConfig
-from factorlens.report import headline
+from fundclone import etfs
+from fundclone.analysis import run_analysis
+from fundclone.attribution import FACTOR_NAMES
+from fundclone.data import REGIONS
+from fundclone.portfolio import parse_portfolio
+from fundclone.replication import ReplicationConfig
+from fundclone.report import headline
 
 
 def looks_like_portfolio(text: str) -> bool:
@@ -53,7 +53,7 @@ def _asset_classes(parser: argparse.ArgumentParser, text: str | None) -> list[st
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="factorlens",
+        prog="fundclone",
         description="Clone a fund or a portfolio with ETFs and explain it with factors.",
     )
     parser.add_argument(
@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> None:
             region=args.region,
         )
     except ValueError as exc:  # bad tickers, portfolios, settings and too-short histories
-        parser.exit(1, f"factorlens: {exc}\n")
+        parser.exit(1, f"fundclone: {exc}\n")
 
     returns = a.returns
     title = a.name if a.holdings else f"{a.name} ({a.label})"

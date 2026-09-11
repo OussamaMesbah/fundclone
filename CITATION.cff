@@ -1,11 +1,11 @@
 cff-version: 1.2.0
-message: "If you use FactorLens in research, please cite it as below."
-title: "FactorLens: out-of-sample ETF clones of mutual funds and portfolios"
+message: "If you use FundClone in research, please cite it as below."
+title: "FundClone: out-of-sample ETF clones of mutual funds and portfolios"
 type: software
 authors:
   - family-names: Mesbah
     given-names: Oussama
-repository-code: "https://github.com/OussamaMesbah/FactorLens"
+repository-code: "https://github.com/OussamaMesbah/fundclone"
 version: 0.3.0
 license: MIT
 keywords:

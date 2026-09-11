@@ -1,7 +1,7 @@
 import pytest
 from fakes import analyse
 
-from factorlens import cli
+from fundclone import cli
 
 
 def test_an_input_error_ends_with_a_message_not_a_traceback(monkeypatch, capsys):
@@ -12,7 +12,7 @@ def test_an_input_error_ends_with_a_message_not_a_traceback(monkeypatch, capsys)
     with pytest.raises(SystemExit) as stop:
         cli.main(["XXXX"])
     assert stop.value.code == 1
-    assert capsys.readouterr().err == "factorlens: No price data for XXXX on Yahoo Finance.\n"
+    assert capsys.readouterr().err == "fundclone: No price data for XXXX on Yahoo Finance.\n"
 
 
 @pytest.mark.parametrize(

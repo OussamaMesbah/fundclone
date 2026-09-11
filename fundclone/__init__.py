@@ -1,9 +1,9 @@
 """Clone any fund or portfolio with a handful of low-cost ETFs, out of sample."""
 
-from factorlens.analysis import Analysis, run_analysis
-from factorlens.attribution import AttributionResult, factor_regression, rolling_betas
-from factorlens.portfolio import parse_portfolio
-from factorlens.replication import (
+from fundclone.analysis import Analysis, run_analysis
+from fundclone.attribution import AttributionResult, factor_regression, rolling_betas
+from fundclone.portfolio import parse_portfolio
+from fundclone.replication import (
     ReplicationConfig,
     ReplicationResult,
     estimate_weights,

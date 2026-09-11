@@ -1,6 +1,6 @@
 """Data access: Yahoo Finance prices and fund facts, and the Kenneth French data library.
 
-Downloads are cached on disk (``~/.cache/factorlens`` or ``$FACTORLENS_CACHE``) and reused
+Downloads are cached on disk (``~/.cache/fundclone`` or ``$FUNDCLONE_CACHE``) and reused
 until they are stale. If a refresh fails, the stale copy is used rather than failing.
 """
 
@@ -23,7 +23,7 @@ import requests
 import yfinance as yf
 
 FRENCH_BASE_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp"
-CACHE_DIR = Path(os.environ.get("FACTORLENS_CACHE", Path.home() / ".cache" / "factorlens"))
+CACHE_DIR = Path(os.environ.get("FUNDCLONE_CACHE", Path.home() / ".cache" / "fundclone"))
 PRICE_MAX_AGE = 12 * 3600  # seconds
 FRENCH_MAX_AGE = 24 * 3600
 INFO_MAX_AGE = 7 * 24 * 3600

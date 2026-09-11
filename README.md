@@ -1,13 +1,16 @@
-# FactorLens
+# FundClone
 
-**Is your active fund worth its fee?** FactorLens clones any mutual fund, ETF or
+**Is your active fund worth its fee?** FundClone clones any mutual fund, ETF or
 portfolio with a handful of low-cost ETFs, and measures, strictly out of sample, how
 much of the fund you get from the clone and what the manager adds on top after fees.
 
-[![tests](https://github.com/OussamaMesbah/FactorLens/actions/workflows/tests.yml/badge.svg)](https://github.com/OussamaMesbah/FactorLens/actions/workflows/tests.yml)
+[![tests](https://github.com/OussamaMesbah/fundclone/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/OussamaMesbah/fundclone/actions/workflows/tests.yml)
+[![release](https://img.shields.io/github/v/release/OussamaMesbah/fundclone)](https://github.com/OussamaMesbah/fundclone/releases)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/OussamaMesbah/fundclone/blob/master/LICENSE)
+[![Open the app](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://fundclone.streamlit.app)
 
-![The FactorLens app cloning the American Funds Growth Fund of America](docs/screenshot.png)
+![The FundClone app cloning the American Funds Growth Fund of America](https://raw.githubusercontent.com/OussamaMesbah/fundclone/master/docs/screenshot.png)
 
 ## What you get
 
@@ -27,10 +30,10 @@ Yahoo Finance, and for your own portfolio typed as `VTI 60, VXUS 30, BND 10`.
 ## Quickstart
 
 ```bash
-git clone https://github.com/OussamaMesbah/FactorLens.git && cd FactorLens
+git clone https://github.com/OussamaMesbah/fundclone.git && cd fundclone
 python3 -m venv .venv && source .venv/bin/activate    # Python 3.10 or newer
 pip install -e ".[app]"
-factorlens AGTHX
+fundclone AGTHX
 ```
 
 ```text
@@ -49,9 +52,10 @@ Clone as of 2026-09-01:
   ...
 ```
 
-Install from GitHub as shown: the `factorlens` package on PyPI is an unrelated project.
-The web app shows the same analysis with charts, a shopping list and links that carry
-every setting, such as `?ticker=AGTHX&etfs=5`:
+The web app at [fundclone.streamlit.app](https://fundclone.streamlit.app) shows the same
+analysis with charts, a shopping list and links that carry every setting, such as
+[`?ticker=AGTHX&etfs=5`](https://fundclone.streamlit.app/?ticker=AGTHX&etfs=5). To run it
+locally:
 
 ```bash
 streamlit run streamlit_app.py
@@ -61,15 +65,15 @@ streamlit run streamlit_app.py
 
 Tracking error measures how far the fund and its clone drift apart each year. Every
 clone return below comes after the data used to choose the weights that earned it, and
-after trading costs. FactorLens was developed on 41 funds. The table shows 23 other US
+after trading costs. FundClone was developed on 41 funds. The table shows 23 other US
 mutual funds across the same categories, picked once development was finished and run
 once with the final code:
 
 | 23 fresh funds, 2010 to 2026 | Median tracking error | Mean tracking error | Median R² | ETFs held |
 |---|---|---|---|---|
 | Before 0.3: 4-7 hand-picked ETFs | 3.78% | 4.44% | 0.930 | 2.9 |
-| **FactorLens 0.3** | **2.89%** | **2.92%** | **0.966** | **7.8** |
-| FactorLens 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 4.6 |
+| **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **7.8** |
+| FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 4.6 |
 
 The clone tracks more closely than before on 22 of the 23 funds; the exception is an S&P
 500 index fund (0.60% before, 0.63% now). Plain least squares on the same 81 ETFs tracks
@@ -93,7 +97,7 @@ What remains is mostly what the manager does that no ETF combination can: pickin
 individual stocks. For a fund with 2% tracking error that is a small bet; for ARKK (21%)
 or Berkshire Hathaway (11%) it is a large part of the story. The protocol, the results for every
 fund, a comparison of seven estimation methods and the commands to reproduce every
-number are in [benchmarks/](benchmarks/README.md).
+number are in [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/master/benchmarks/README.md).
 
 ## How it works
 
@@ -124,7 +128,7 @@ weekly returns.
 ## Python
 
 ```python
-from factorlens import ReplicationConfig, run_analysis
+from fundclone import ReplicationConfig, run_analysis
 
 fund = run_analysis("DODGX", start="2005-01-01", end="2026-09-01")
 fund.tracking["tracking_error"], fund.tracking["r_squared"]
@@ -140,7 +144,7 @@ portfolio = run_analysis(mix, "2012-01-01", "2026-09-01", replication=three)
 
 Portfolio Visualizer offers factor regressions and manager performance analysis, and
 Interactive Brokers gives its clients a Mutual Fund Replicator that suggests ETFs in
-place of a mutual fund. FactorLens differs in that every clone is tested out of sample
+place of a mutual fund. FundClone differs in that every clone is tested out of sample
 with trading costs, and it is open source under the MIT license, benchmark included.
 
 ## Limitations
@@ -148,7 +152,7 @@ with trading costs, and it is open source under the MIT license, benchmark inclu
 - Stock selection cannot be cloned from returns. For concentrated funds the tracking
   error stays high; that is the size of the active bet you pay for.
 - The ETFs are US-listed. Investors in the EU generally cannot buy them and need UCITS
-  equivalents, which FactorLens does not cover yet.
+  equivalents, which FundClone does not cover yet.
 - The first clone needs about 19 months of prices (18 to fit it), and figures from less
   than a year of out-of-sample returns mean little: the verdict says so and leaves out
   the ESMA screen.
@@ -179,11 +183,12 @@ ruff check .
 
 The tests run offline on synthetic data, the web app included. Among other things they
 check that changing a fund's returns from some date on leaves every earlier clone return
-unchanged. [benchmarks/](benchmarks/README.md) explains how to rerun the benchmark.
+unchanged. [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/master/benchmarks/README.md) explains how to rerun the benchmark, and
+[CONTRIBUTING.md](https://github.com/OussamaMesbah/fundclone/blob/master/CONTRIBUTING.md) how to contribute and cut a release.
 
 ## License and citation
 
-FactorLens is released under the [MIT license](LICENSE). If you use it in research, cite
-it with the metadata in [CITATION.cff](CITATION.cff).
+FundClone is released under the [MIT license](https://github.com/OussamaMesbah/fundclone/blob/master/LICENSE). If you use it in research, cite
+it with the metadata in [CITATION.cff](https://github.com/OussamaMesbah/fundclone/blob/master/CITATION.cff).
 
-FactorLens is a research tool, not investment advice.
+FundClone is a research tool, not investment advice.

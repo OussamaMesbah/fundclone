@@ -1,4 +1,4 @@
-from factorlens.factsheet import is_valid_isin, parse_factsheet_text
+from fundclone.factsheet import is_valid_isin, parse_factsheet_text
 
 FACTSHEET = """Example Balanced Fund - Institutional Class
 Share class I (EXBFX)

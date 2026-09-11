@@ -5,11 +5,11 @@ import pandas as pd
 import pytest
 from fakes import CONFIG, SMALL, analyse, fake_factors, fake_info, fake_prices
 
-from factorlens import etfs
-from factorlens.analysis import _region_for, run_analysis
-from factorlens.data import FF6
-from factorlens.replication import ReplicationConfig
-from factorlens.report import headline
+from fundclone import etfs
+from fundclone.analysis import _region_for, run_analysis
+from fundclone.data import FF6
+from fundclone.replication import ReplicationConfig
+from fundclone.report import headline
 
 
 def test_fund_pipeline_on_synthetic_data():
@@ -98,6 +98,15 @@ def test_stale_fund_prices_are_merged_with_the_next_day():
 
     a = analyse(price_loader=loader)
     assert any("FUND's price did not change" in note for note in a.notes)
+
+
+def test_notes_from_the_price_loader_are_passed_on():
+    def loader(tickers, start, end):
+        prices = fake_prices(tickers, start, end)
+        prices.attrs["notes"] = ["Prices come from a snapshot."]
+        return prices
+
+    assert "Prices come from a snapshot." in analyse(price_loader=loader).notes
 
 
 def test_a_one_day_price_error_is_left_out_with_a_note():

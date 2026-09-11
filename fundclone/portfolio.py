@@ -8,7 +8,7 @@ from collections.abc import Mapping
 
 import pandas as pd
 
-from factorlens.data import daily_returns
+from fundclone.data import daily_returns
 
 MAX_LENGTH = 2000  # characters
 # A ticker holds at least one letter, so that "VTI 60 40" is not read as VTI 6 and "0" 40,

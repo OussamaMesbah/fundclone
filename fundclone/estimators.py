@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.optimize import nnls
 
-from factorlens.replication import Estimator, ReplicationConfig, constrained_least_squares
+from fundclone.replication import Estimator, ReplicationConfig, constrained_least_squares
 
 HALF_LIFE_DAYS = 63  # recent days count more: an observation's weight halves every 63 days
 STABILITY = 0.1  # pull towards last month's weights, in units of the average ETF variance

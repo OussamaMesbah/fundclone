@@ -1,4 +1,4 @@
-"""FactorLens web app. Run with `streamlit run streamlit_app.py`.
+"""FundClone web app. Run with `streamlit run streamlit_app.py`.
 
 Links carry the analysis: ?ticker=AGTHX or ?portfolio=VTI 60, BND 40, plus every setting
 that differs from the default, such as &start=2015-01-01&etfs=5.
@@ -8,18 +8,19 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from factorlens import charts, etfs
-from factorlens.analysis import Analysis, run_analysis
-from factorlens.attribution import FACTOR_DESCRIPTIONS, FACTOR_NAMES
-from factorlens.data import REGIONS, fetch_info, fetch_prices, load_french_factors
-from factorlens.factsheet import parse_factsheet
-from factorlens.portfolio import parse_portfolio, whole_shares
-from factorlens.replication import ReplicationConfig
-from factorlens.report import (
+from fundclone import charts, etfs
+from fundclone.analysis import Analysis, run_analysis
+from fundclone.attribution import FACTOR_DESCRIPTIONS, FACTOR_NAMES
+from fundclone.data import REGIONS, fetch_info, fetch_prices, load_french_factors
+from fundclone.factsheet import parse_factsheet
+from fundclone.portfolio import parse_portfolio, whole_shares
+from fundclone.replication import ReplicationConfig
+from fundclone.report import (
     EQUITY_SHARE_FOR_SCREEN,
     closet_index_check,
     headline,
@@ -27,7 +28,7 @@ from factorlens.report import (
     too_short,
 )
 
-st.set_page_config(page_title="FactorLens", layout="wide")
+st.set_page_config(page_title="FundClone", layout="wide")
 
 AUTOMATIC = "Automatic"
 EXAMPLES = ["AGTHX", "DODGX", "FCNTX", "PRWCX", "PTTRX"]
@@ -61,7 +62,7 @@ DEFAULTS = {
 PLOT_CONFIG = {"displaylogo": False}
 
 METHOD = f"""
-**The clone.** At the end of every month FactorLens looks at the fund's daily returns
+**The clone.** At the end of every month FundClone looks at the fund's daily returns
 over the past 18 months and finds the long-only mix of {len(etfs.ETFS)} liquid US-listed
 ETFs (size and style, sectors, industries, factors, regions, bonds, gold, commodities)
 that would have followed it most closely. Recent days count more (a 63-day half-life),
@@ -92,9 +93,9 @@ zero, the manager added something cheap ETFs could not. A range that straddles z
 means the difference is within the noise.
 
 **Closet index screen.** For equity funds with a year or more of out-of-sample returns,
-FactorLens applies the three returns-based thresholds ESMA used in its 2020 study of
+FundClone applies the three returns-based thresholds ESMA used in its 2020 study of
 potential closet index funds: tracking error below 3%, R² above 95% and beta between
-0.95 and 1.05. ESMA measured them against each fund's own benchmark; FactorLens uses the
+0.95 and 1.05. ESMA measured them against each fund's own benchmark; FundClone uses the
 ETF, out of its {len(etfs.ETFS)}, that tracked the fund most closely. Where one of them
 follows the fund's benchmark, that makes the thresholds easier to meet. Where none does,
 as for total international or all-world indices, it can make them harder, so failing the
@@ -107,12 +108,41 @@ that hold bonds, and splits the average return into factor contributions and alp
 
 **Data.** Prices and fund expense ratios from Yahoo Finance; factors and the T-bill rate
 from the Kenneth French data library, which lags by one to two months. ETF expense
-ratios as of {etfs.EXPENSE_RATIOS_AS_OF}.
+ratios as of {etfs.EXPENSE_RATIOS_AS_OF}. If Yahoo Finance does not answer, prices come
+from a snapshot that ships with the app, and the page says so.
 
-FactorLens is a research tool, not investment advice.
+FundClone is a research tool, not investment advice.
 """
 
-prices_cached = st.cache_data(ttl="6h", show_spinner=False)(fetch_prices)
+SNAPSHOT = Path(__file__).with_name("data") / "prices.parquet"  # see CONTRIBUTING.md
+
+live_prices = st.cache_data(ttl="6h", show_spinner=False)(fetch_prices)
+
+
+@st.cache_resource(show_spinner=False)
+def snapshot() -> pd.DataFrame:
+    """Adjusted closes that ship with the app, for when Yahoo Finance does not answer."""
+    return pd.read_parquet(SNAPSHOT).astype(float) if SNAPSHOT.exists() else pd.DataFrame()
+
+
+def prices_cached(tickers: list[str], start: str, end: str) -> pd.DataFrame:
+    """Prices from Yahoo Finance, cached; tickers Yahoo does not answer for come from the
+    snapshot, with a note for the analysis to show."""
+    tickers = list(dict.fromkeys(tickers))  # run_analysis may ask for a ticker twice
+    live = live_prices(tickers, start, end)
+    stored = snapshot()
+    fill = [ticker for ticker in tickers if ticker not in live and ticker in stored]
+    if not fill:
+        return live
+    period = (stored.index >= pd.Timestamp(start)) & (stored.index < pd.Timestamp(end))
+    prices = pd.concat([live, stored.loc[period, fill]], axis=1).sort_index()
+    prices.attrs["notes"] = [
+        f"Yahoo Finance did not answer for {', '.join(fill)}, so their prices come from the "
+        f"snapshot of {stored.index[-1]:%Y-%m-%d} that ships with the app."
+    ]
+    return prices
+
+
 factors_cached = st.cache_data(ttl="1d", show_spinner=False)(load_french_factors)
 info_cached = st.cache_data(ttl="1d", show_spinner=False)(fetch_info)
 
@@ -575,7 +605,7 @@ def render_clone(a: Analysis, params: dict, mode: str) -> None:
         st.download_button(
             "Download the clone as CSV",
             export.to_csv(index=False).encode(),
-            file_name=f"factorlens-clone-{a.label.lower()}.csv",
+            file_name=f"fundclone-{a.label.lower()}.csv",
             mime="text/csv",
         )
 
@@ -746,7 +776,7 @@ def main() -> None:
         update_link(submitted)
     params = st.session_state.get("params", initial)
 
-    st.title("FactorLens")
+    st.title("FundClone")
     st.caption(
         "Clone any fund or portfolio with a handful of low-cost ETFs, "
         "and see what the manager adds after fees."

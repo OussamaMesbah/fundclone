@@ -6,9 +6,9 @@ import pytest
 
 pytest.importorskip("plotly")
 
-from factorlens import charts  # noqa: E402
-from factorlens.attribution import factor_regression, rolling_betas  # noqa: E402
-from factorlens.replication import ReplicationConfig, walk_forward  # noqa: E402
+from fundclone import charts  # noqa: E402
+from fundclone.attribution import factor_regression, rolling_betas  # noqa: E402
+from fundclone.replication import ReplicationConfig, walk_forward  # noqa: E402
 
 LABELS = {"fund": "FUND", "clone": "ETF clone", "closest": "SPY"}
 

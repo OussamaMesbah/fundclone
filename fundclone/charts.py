@@ -14,8 +14,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from factorlens.attribution import FACTOR_NAMES, AttributionResult
-from factorlens.metrics import TRADING_DAYS, drawdown
+from fundclone.attribution import FACTOR_NAMES, AttributionResult
+from fundclone.metrics import TRADING_DAYS, drawdown
 
 SERIES = {
     "light": [

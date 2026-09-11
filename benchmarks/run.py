@@ -24,8 +24,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from factorlens import etfs
-from factorlens.data import (
+from fundclone import etfs
+from fundclone.data import (
     adjust_splits,
     compounded_rate,
     daily_returns,
@@ -33,9 +33,9 @@ from factorlens.data import (
     drop_stale_prices,
     weekly_returns,
 )
-from factorlens.estimators import make_estimator
-from factorlens.metrics import WEEKS_PER_YEAR, tracking, years_spanned
-from factorlens.replication import ReplicationConfig, constrained_least_squares, walk_forward
+from fundclone.estimators import make_estimator
+from fundclone.metrics import WEEKS_PER_YEAR, tracking, years_spanned
+from fundclone.replication import ReplicationConfig, constrained_least_squares, walk_forward
 
 FUNDS_FILE = Path(__file__).with_name("funds.csv")
 DATA_DIR = Path(__file__).with_name("data")  # where benchmarks.download puts the snapshot
@@ -45,7 +45,7 @@ EVAL_START = pd.Timestamp("2010-01-04")
 WARMUP = pd.Timedelta(days=1100)  # about three years of data before a young fund is scored
 
 # The baseline: four to seven hand-picked ETFs per type of fund, fitted by plain least
-# squares, the way FactorLens worked before version 0.3 (0.1.0's sets differed in detail).
+# squares, the way the project (then FactorLens) worked before 0.3; 0.1.0's sets differed.
 LEGACY = {
     "US equity: style ETFs": ["SPY", "IWM", "IWD", "IWF"],
     "Global equity": ["SPY", "IWM", "EFA", "EEM"],

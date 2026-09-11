@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from factorlens.attribution import bond_factors, factor_regression, newey_west_lags, rolling_betas
+from fundclone.attribution import bond_factors, factor_regression, newey_west_lags, rolling_betas
 
 TRUE_BETAS = np.array([1.0, 0.4, -0.2])
 TRUE_ALPHA = 0.002  # per month

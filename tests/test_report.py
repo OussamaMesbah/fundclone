@@ -4,7 +4,7 @@ import pytest
 from fakes import analyse
 from scipy import stats
 
-from factorlens.report import _signed, closet_index_check, headline, interval, too_short
+from fundclone.report import _signed, closet_index_check, headline, interval, too_short
 
 
 @pytest.fixture(scope="module")

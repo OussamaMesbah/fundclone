@@ -3,6 +3,7 @@
 import datetime as dt
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 pytest.importorskip("streamlit")
@@ -11,7 +12,7 @@ import streamlit as st  # noqa: E402
 from fakes import fake_factors, fake_info, fake_prices  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from factorlens import data  # noqa: E402
+from fundclone import data  # noqa: E402
 
 APP = str(Path(__file__).parents[1] / "streamlit_app.py")
 
@@ -56,6 +57,14 @@ def test_a_link_value_the_form_cannot_show_is_ignored(app):
     app.run()
     assert not app.exception
     assert widget(app.selectbox, "ETFs in the clone").value == "Automatic"
+
+
+def test_the_app_falls_back_to_its_price_snapshot(app, monkeypatch):
+    monkeypatch.setattr(data, "fetch_prices", lambda tickers, start, end: pd.DataFrame())
+    app.query_params["ticker"] = "AGTHX"  # a benchmark fund, so it is in the snapshot
+    app.run()
+    assert not app.exception
+    assert any("snapshot of" in element.value for element in app.caption)
 
 
 def test_a_clone_in_cash_renders(app, monkeypatch):

@@ -3,8 +3,8 @@ import pandas as pd
 import pytest
 from scipy.optimize import nnls
 
-from factorlens.estimators import make_estimator
-from factorlens.replication import (
+from fundclone.estimators import make_estimator
+from fundclone.replication import (
     ReplicationConfig,
     ReplicationResult,
     estimate_weights,

@@ -1,6 +1,6 @@
 import pytest
 
-from factorlens import etfs
+from fundclone import etfs
 
 
 def test_catalogue_has_unique_tickers_and_plausible_costs():

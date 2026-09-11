@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
-from factorlens.data import weekly_returns
-from factorlens.metrics import TRADING_DAYS
+from fundclone.data import weekly_returns
+from fundclone.metrics import TRADING_DAYS
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ class ReplicationConfig:
         returns). Multi-day returns absorb prices set at different times of day.
 
     max_etfs, min_weight and overlap apply to long-only, unlevered clones, which use the
-    estimators in factorlens.estimators; long/short or levered clones use plain least
+    estimators in fundclone.estimators; long/short or levered clones use plain least
     squares.
     """
 
@@ -245,7 +245,7 @@ def walk_forward(
     """
     config = config or ReplicationConfig()
     if estimator is None:
-        from factorlens.estimators import make_estimator  # estimators imports this module
+        from fundclone.estimators import make_estimator  # estimators imports this module
 
         estimator = make_estimator(config)
     assets = list(asset_returns.columns)

@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from factorlens import data
-from factorlens.data import (
+from fundclone import data
+from fundclone.data import (
     daily_returns,
     fx_ticker,
     monthly_returns,

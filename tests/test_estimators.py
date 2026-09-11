@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
 
-from factorlens.estimators import (
+from fundclone.estimators import (
     DEFAULT,
     _overlapping_sums,
     forward_selection,
     make_estimator,
     stable_least_squares,
 )
-from factorlens.replication import ReplicationConfig, constrained_least_squares
+from fundclone.replication import ReplicationConfig, constrained_least_squares
 
 CONFIG = ReplicationConfig(window=400)
 

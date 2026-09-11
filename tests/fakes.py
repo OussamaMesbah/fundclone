@@ -3,9 +3,9 @@
 import numpy as np
 import pandas as pd
 
-from factorlens.analysis import run_analysis
-from factorlens.data import FF6
-from factorlens.replication import ReplicationConfig
+from fundclone.analysis import run_analysis
+from fundclone.data import FF6
+from fundclone.replication import ReplicationConfig
 
 DATES = pd.bdate_range("2010-01-01", "2014-12-31")
 CONFIG = ReplicationConfig(window=126)

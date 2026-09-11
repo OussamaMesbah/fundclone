@@ -44,8 +44,8 @@ ETF and, as a control, one stock. It is the evidence behind the numbers in the
   this snapshot.
 - **Baseline.** "Before 0.3" fits plain least squares on 252 days to a fixed set of four
   to seven ETFs per type of fund (`LEGACY` in [run.py](run.py)) on raw prices. That is
-  how FactorLens worked before version 0.3; the public version 0.1.0 also used a few
-  hand-picked ETFs per type of fund, though not exactly these.
+  how the project, then called FactorLens, worked before version 0.3; its public version
+  0.1.0 also used a few hand-picked ETFs per type of fund, though not exactly these.
 
 ## Results
 
@@ -55,8 +55,8 @@ Fresh set, 23 funds, run once:
 |---|---|---|---|---|---|
 | Before 0.3: 4-7 hand-picked ETFs, least squares on 252 days | 3.78% | 4.44% | 0.930 | 0.75 | 2.9 |
 | 81 ETFs, least squares on 252 days | 2.84% | 2.87% | 0.966 | 2.62 | 13.0 |
-| **FactorLens 0.3** | **2.89%** | **2.92%** | **0.966** | **1.30** | **7.8** |
-| FactorLens 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 1.54 | 4.6 |
+| **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **1.30** | **7.8** |
+| FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 1.54 | 4.6 |
 
 Holdout half of the development set, 20 funds:
 
@@ -64,8 +64,8 @@ Holdout half of the development set, 20 funds:
 |---|---|---|---|---|---|
 | Before 0.3 | 3.37% | 4.84% | 0.935 | 0.83 | 2.8 |
 | 81 ETFs, least squares on 252 days | 2.82% | 3.24% | 0.958 | 2.79 | 12.1 |
-| **FactorLens 0.3** | **2.86%** | **3.28%** | **0.958** | **1.21** | **7.5** |
-| FactorLens 0.3, at most 5 ETFs | 2.95% | 3.43% | 0.954 | 1.52 | 4.6 |
+| **FundClone 0.3** | **2.86%** | **3.28%** | **0.958** | **1.21** | **7.5** |
+| FundClone 0.3, at most 5 ETFs | 2.95% | 3.43% | 0.954 | 1.52 | 4.6 |
 
 The whole development set, 41 funds:
 
@@ -73,8 +73,8 @@ The whole development set, 41 funds:
 |---|---|---|---|---|---|
 | Before 0.3 | 3.66% | 5.07% | 0.928 | 0.85 | 3.0 |
 | 81 ETFs, least squares on 252 days | 2.95% | 3.48% | 0.961 | 2.97 | 13.4 |
-| **FactorLens 0.3** | **2.93%** | **3.50%** | **0.960** | **1.23** | **8.0** |
-| FactorLens 0.3, at most 5 ETFs | 3.05% | 3.66% | 0.954 | 1.66 | 4.7 |
+| **FundClone 0.3** | **2.93%** | **3.50%** | **0.960** | **1.23** | **8.0** |
+| FundClone 0.3, at most 5 ETFs | 3.05% | 3.66% | 0.954 | 1.66 | 4.7 |
 
 The wider set of building blocks does most of the work: the median tracking error of the
 seven sector funds fell from 13.3% with the hand-picked ETFs to 6.5% with every ETF but
@@ -193,7 +193,7 @@ days, so these figures are not directly comparable with the tables above.
 | Greedy forward selection | 3.01% | 3.99% | 3.42 | 3.12% | 3.76% | 3.01 |
 
 On the holdout funds the medians differ by at most 15 basis points and the means by less
-than 7, while turnover differs by more than a factor of two. FactorLens therefore uses the
+than 7, while turnover differs by more than a factor of two. FundClone therefore uses the
 simplest low-turnover design, the ridge towards last month's weights with recent days
 weighted more, and adds a 2% minimum position so that the clone has no holdings too small
 to matter. On the dev funds, with the current benchmark:
@@ -224,7 +224,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[app,dev]"
 python -m benchmarks.download                                                   # writes benchmarks/data
 
-python -m benchmarks.run --split fresh --window 378 --estimator product         # FactorLens 0.3, fresh set
+python -m benchmarks.run --split fresh --window 378 --estimator product         # FundClone 0.3, fresh set
 python -m benchmarks.run --split dev,holdout --window 378 --estimator product   # development set
 python -m benchmarks.run --split all --window 378 --estimator product --max-etfs 5
 python -m benchmarks.run --split all                                             # least squares, 81 ETFs

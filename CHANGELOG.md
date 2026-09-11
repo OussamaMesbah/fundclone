@@ -1,9 +1,10 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-09-11)
 
-Rebuilt around one question: can a handful of low-cost ETFs do what this fund does, and
-what does the manager add after fees?
+Renamed from FactorLens to FundClone (package and command `fundclone`, web app at
+fundclone.streamlit.app) and rebuilt around one question: can a handful of low-cost ETFs
+do what this fund does, and what does the manager add after fees?
 
 ### Added
 - Clone any mutual fund, ETF or stock, or a custom portfolio such as `VTI 60, BND 40`,
@@ -22,7 +23,10 @@ what does the manager add after fees?
   ETFs, price errors that reverse within days are dropped and unadjusted splits undone.
 - The verdict needs a year of out-of-sample returns for the 95% range, the annualised
   gap and the ESMA screen, and says so when there is less.
-- A disk cache for prices, fund facts and factor files.
+- A disk cache for prices, fund facts and factor files, and a price snapshot the web app
+  falls back on when Yahoo Finance does not answer.
+- Continuous integration on Python 3.10 and 3.13 (tests, lint, package build), a release
+  workflow driven by tags and this changelog, and a contributing guide.
 
 ### Changed
 - New default estimator: recency-weighted constrained least squares with a pull towards
@@ -44,5 +48,5 @@ what does the manager add after fees?
 
 ## 0.1.0
 
-First public version: factor regression on long-only ETFs and a replicating portfolio,
+First public version, as FactorLens: factor regression on long-only ETFs and a replicating portfolio,
 with a Flask and a Streamlit front end.

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from factorlens.metrics import benchmark_fit, drawdown, performance, tracking, years_spanned
+from fundclone.metrics import benchmark_fit, drawdown, performance, tracking, years_spanned
 
 
 def test_benchmark_fit_recovers_beta_and_r_squared():

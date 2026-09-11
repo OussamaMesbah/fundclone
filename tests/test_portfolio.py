@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from factorlens.cli import looks_like_portfolio
-from factorlens.portfolio import (
+from fundclone.cli import looks_like_portfolio
+from fundclone.portfolio import (
     format_portfolio,
     parse_portfolio,
     portfolio_returns,
