@@ -7,7 +7,7 @@ authors:
     given-names: Oussama
 repository-code: "https://github.com/OussamaMesbah/fundclone"
 url: "https://fundclone.streamlit.app"
-version: 0.3.0
+version: 0.4.0
 date-released: 2026-09-11
 license: MIT
 keywords:

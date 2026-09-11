@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-09-11)
+
+Security hardening and a setup for outside contributors. How clones are estimated and
+measured is unchanged, so the benchmark results of 0.3.0 still hold.
+
 ### Added
 - A security policy, a code of conduct, issue and pull-request templates, and a
   `fundclone --version` flag.
@@ -18,6 +23,8 @@
 
 ### Fixed
 - The command that builds a local price snapshot creates its folder.
+- The release workflow can be rerun, for example after a failed upload to PyPI. It
+  uploads the files to the existing GitHub release instead of failing to create it.
 
 ### Security
 - Text from links, uploads and data sources is shown as plain text, and tickers in links
