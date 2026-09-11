@@ -93,15 +93,11 @@ pandas==3.0.5
 patsy==1.0.3
     # via statsmodels
 pdfminer-six==20260107
-    # via pdfplumber
-pdfplumber==0.11.10
     # via fundclone (pyproject.toml)
 peewee==4.5.1
     # via yfinance
 pillow==12.3.0
-    # via
-    #   pdfplumber
-    #   streamlit
+    # via streamlit
 platformdirs==4.11.8
     # via yfinance
 plotly==7.0.0
@@ -116,8 +112,6 @@ pycparser==3.0
     # via cffi
 pydeck==0.9.3
     # via streamlit
-pypdfium2==5.13.0
-    # via pdfplumber
 python-dateutil==2.9.0.post0
     # via pandas
 python-multipart==0.0.32

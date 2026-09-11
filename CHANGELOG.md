@@ -7,17 +7,27 @@
   `fundclone --version` flag.
 - A `dev` branch for upcoming changes; `master` is protected and takes only pull requests
   that pass CI.
-- A dry-run mode for the release workflow, started by hand on a branch.
+- A dry-run mode for the release workflow, started by hand on a branch. Only tags run the
+  jobs that can write: the GitHub release and PyPI.
 - A visible disclaimer and data attribution in the app and the README, and a privacy note
   for factsheet uploads.
+
+### Changed
+- Factsheets are read with pdfminer.six instead of pdfplumber, which sets up every page of
+  a file even when only the first few are read.
+
+### Fixed
+- The command that builds a local price snapshot creates its folder.
 
 ### Security
 - Text from links, uploads and data sources is shown as plain text, and tickers in links
   are checked, so a crafted link cannot put its own links on the page.
-- Factsheet PDFs are read in a separate process with limits on size, pages, memory and
-  time.
-- Portfolios have at most 30 holdings, the price cache a fixed number of entries, and
-  failed downloads are retried for a few tickers only.
+- Factsheet PDFs are read in a separate process with limits on size, time and processor
+  time, and on memory on Linux, where the hosted app runs. Only their first five pages are
+  opened.
+- Portfolios have at most 30 holdings and weights must be ordinary numbers. The caches in
+  memory and on disk keep a fixed number of entries, and failed downloads are retried for
+  a few tickers only.
 - Cache paths built from user input must stay inside the cache folder.
 - The workflows pin their actions to commit SHAs and do not keep the checkout token, and
   the web app's dependencies are pinned in requirements.txt.

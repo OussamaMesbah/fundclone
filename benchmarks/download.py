@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.snapshot:
         compact = prices.loc[prices.index >= SNAPSHOT_START].astype("float32")
+        Path(args.snapshot).parent.mkdir(parents=True, exist_ok=True)
         compact.to_parquet(args.snapshot, compression="zstd")
         print(f"app snapshot: {compact.shape[1]} series from {compact.index[0]:%Y-%m-%d}")
 

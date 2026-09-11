@@ -37,7 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-app = ["pdfplumber>=0.11.10", "plotly>=5.20", "streamlit>=1.56"]
+app = ["pdfminer.six>=20260107", "plotly>=5.20", "streamlit>=1.56"]
 dev = ["pyarrow>=14", "pytest>=8", "ruff==0.16.7"]  # pinned: CI checks the formatting
 
 [project.scripts]
@@ -57,6 +57,7 @@ exclude = [".devcontainer/", ".github/", "data/", "docs/"]  # not needed to buil
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # so the tests can import the benchmarks package
 
 [tool.ruff]
 line-length = 100

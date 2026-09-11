@@ -93,3 +93,19 @@ def test_a_link_with_a_malformed_ticker_is_ignored(app):
     app.run()
     assert not app.exception
     assert not any("evil.example" in str(element.value) for element in app.markdown)
+
+
+def test_factsheet_details_are_shown_as_plain_text(app, monkeypatch):
+    from fundclone import factsheet
+
+    hostile = {
+        "fund_name": "[Sign in](https://evil.example) www.evil.example",
+        "isins": [],
+        "ticker_candidates": ["EVIL"],
+    }
+    monkeypatch.setattr(factsheet, "parse_factsheet_safely", lambda pdf: hostile)
+    app.run()
+    app.file_uploader[0].set_value(("factsheet.pdf", b"%PDF-1.4", "application/pdf")).run()
+    assert not app.exception
+    shown = [m.value.replace("\\", "") for m in app.markdown if "evil" in m.value]
+    assert shown and all("https://" not in text and "www." not in text for text in shown)

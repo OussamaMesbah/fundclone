@@ -1,7 +1,8 @@
 """Data access: Yahoo Finance prices and fund facts, and the Kenneth French data library.
 
 Downloads are cached on disk (``~/.cache/fundclone`` or ``$FUNDCLONE_CACHE``) and reused
-until they are stale. If a refresh fails, the stale copy is used rather than failing.
+until they are stale. If a refresh fails, the stale copy is used rather than failing. Each
+kind of cache keeps its MAX_CACHE_FILES most recently written files.
 """
 
 from __future__ import annotations
@@ -27,6 +28,9 @@ CACHE_DIR = Path(os.environ.get("FUNDCLONE_CACHE", Path.home() / ".cache" / "fun
 PRICE_MAX_AGE = 12 * 3600  # seconds
 FRENCH_MAX_AGE = 24 * 3600
 INFO_MAX_AGE = 7 * 24 * 3600
+# Files per kind of cache, enough for the benchmark's ETFs and funds several times over.
+# Tickers come from users, so without a limit the cache could fill the disk.
+MAX_CACHE_FILES = 1000
 
 FF6 = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"]
 
@@ -103,6 +107,27 @@ def _write(path: Path, text: str) -> None:
     except OSError:  # a read-only home directory only costs us the cache
         with contextlib.suppress(OSError):
             temp.unlink(missing_ok=True)
+        return
+    _prune(path.parent, MAX_CACHE_FILES, written=path)
+
+
+def _prune(folder: Path, keep: int, written: Path) -> None:
+    """Delete all but the `keep` most recently written cache files in `folder`. The file
+    just `written` always stays, whatever its time stamp says, and temporary files of
+    writers still at work are left alone."""
+    entries: list[tuple[float, str, Path]] = []
+    try:
+        for path in folder.iterdir():
+            if path.suffix == ".tmp" or path == written:
+                continue
+            with contextlib.suppress(OSError):  # removed by another process meanwhile
+                entries.append((path.stat().st_mtime, path.name, path))
+    except OSError:
+        return
+    entries.sort(key=lambda entry: entry[:2], reverse=True)
+    for *_, old in entries[max(keep - 1, 0) :]:
+        with contextlib.suppress(OSError):
+            old.unlink()
 
 
 def parse_french_csv(text: str) -> pd.DataFrame:
