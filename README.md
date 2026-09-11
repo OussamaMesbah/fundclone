@@ -1,45 +1,189 @@
-# FactorLens: Systematic Portfolio Reconstructor
+# FactorLens
 
-FactorLens is an institutional-grade tool designed to decompose and replicate the performance of investment funds using systematic factors. It allows users to understand the "Beta" drivers behind a fund's returns and identify whether "Alpha" is genuine or simply a result of factor exposure.
+**Is your active fund worth its fee?** FactorLens clones any mutual fund, ETF or
+portfolio with a handful of low-cost ETFs, and measures, strictly out of sample, how
+much of the fund you get from the clone and what the manager adds on top after fees.
 
-> **Status:** Early Stage / Experimental. This is a "proof of concept" and not a professional investment tool.
+[![tests](https://github.com/OussamaMesbah/FactorLens/actions/workflows/tests.yml/badge.svg)](https://github.com/OussamaMesbah/FactorLens/actions/workflows/tests.yml)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 
-## 🚀 How it Works
+![The FactorLens app cloning the American Funds Growth Fund of America](docs/screenshot.png)
 
-The application breaks down returns into systematic style exposures through a simple pipeline:
+## What you get
 
-1.  **Metadata Extraction:** Analyzes factsheets to infer strategy and benchmark.
-2.  **Institutional Data Fetching:** Automatically retrieves the **Risk-Free Rate (RF)** and historical factor returns (Market, Value, Size, Momentum, Quality, Low-Volatility).
-3.  **Advanced Regression Engine:** 
-    *   Uses **Excess Returns** (`Return - RF`) to ensure statistically accurate Alpha.
-    *   Supports **Monthly Resampling** to reduce daily noise and lead-lag effects.
-    *   Runs **Rolling OLS Regression** to track style drift over different market cycles.
-4.  **Replicating Portfolio:** Uses **Constrained Optimization** (Minimizing Tracking Error) to build an investable factor-based clone.
+- **A verdict.** How much of the fund's week-to-week behaviour a cheap ETF clone
+  reproduces, how much faster or slower the fund grew than its clone after all fees
+  (with a 95% range), and whether it meets ESMA's screen for a potential closet index
+  fund.
+- **A clone you can buy.** Typically seven to ten liquid ETFs, their weights, whole-share
+  orders for any amount, what the fees add up to and a CSV to take to your broker. Cap
+  it at three or five ETFs if you prefer something simpler.
+- **An X-ray.** Fama-French factor exposures with Newey-West errors, how they drifted
+  over time, and the single ETF that comes closest to the fund.
 
-## 🌟 Key Features
+It works for funds, ETFs and stocks with about 19 months of price history or more on
+Yahoo Finance, and for your own portfolio typed as `VTI 60, VXUS 30, BND 10`.
 
-*   **Alpha Accuracy:** Calculates genuine excess returns by adjusting for the risk-free rate.
-*   **Leverage Support:** Can target exposures > 100% to replicate leveraged portfolios (e.g., Berkshire Hathaway style).
-*   **Investable Proxies:** Uses specifically selected Factor ETFs (e.g., `QUAL`, `VLUE`, `MTUM`) as proxies for academic factors.
-*   **Stability:** Monthly resampling provides more reliable factor loadings than daily data.
+## Quickstart
 
-## ✅ What it CAN do
+```bash
+git clone https://github.com/OussamaMesbah/FactorLens.git && cd FactorLens
+python3 -m venv .venv && source .venv/bin/activate    # Python 3.10 or newer
+pip install -e ".[app]"
+factorlens AGTHX
+```
 
-*   **Identify Style Drifts:** Visualize how a fund's factor tilts change over time.
-*   **Factor Attribution:** Understand which drivers (Size, Value, Quality, etc.) are actually responsible for the returns.
-*   **Synthetic Benchmarking:** Compare a manager against a "synthetic clone" rather than a simple market index.
+```text
+American Funds Growth Fd of Amer A (AGTHX), out of sample 2006-08-02 to 2026-09-10
 
-## ❌ Current Limitations
+A clone of 10 ETFs explains 98% of the variation in AGTHX's weekly returns out of sample, with a tracking error of 2.3% a year.
+The clone costs 0.27% a year in ETF fees; the fund charges 0.59%.
+AGTHX returned 0.2% a year more than its clone after all fees; the 95% range is -0.9% to +1.3%, so the gap is within the noise.
+The closest single ETF, IWF, tracks with 4.2% tracking error.
 
-*   **Long-Only Proxies:** While the engine is robust, it uses Long-only ETFs as proxies rather than pure academic Long/Short factors.
-*   **Parsing Heuristics:** The PDF parser relies on text patterns; scanned or complex image-only PDFs may not be parsed correctly.
+Clone as of 2026-09-01:
+  IWF    Russell 1000 Growth                  32.0%
+  FDN    Internet                             14.8%
+  XLY    Consumer Discretionary               10.4%
+  AAXJ   MSCI All Country Asia ex Japan        8.8%
+  ...
+```
 
-## 🛠️ Tech Stack
+Install from GitHub as shown: the `factorlens` package on PyPI is an unrelated project.
+The web app shows the same analysis with charts, a shopping list and links that carry
+every setting, such as `?ticker=AGTHX&etfs=5`:
 
-*   **Frontend:** Streamlit (Primary) / Flask (Legacy)
-*   **Analysis:** Pandas, NumPy, Statsmodels, SciPy
-*   **Visualization:** Plotly
-*   **Data Sources:** yfinance, Kenneth French Data Library
+```bash
+streamlit run streamlit_app.py
+```
 
----
-*Disclaimer: This project is for educational purposes only. Past performance is no guarantee of future results.*
+## How accurate is it?
+
+Tracking error measures how far the fund and its clone drift apart each year. Every
+clone return below comes after the data used to choose the weights that earned it, and
+after trading costs. FactorLens was developed on 41 funds. The table shows 23 other US
+mutual funds across the same categories, picked once development was finished and run
+once with the final code:
+
+| 23 fresh funds, 2010 to 2026 | Median tracking error | Mean tracking error | Median R² | ETFs held |
+|---|---|---|---|---|
+| Before 0.3: 4-7 hand-picked ETFs | 3.78% | 4.44% | 0.930 | 2.9 |
+| **FactorLens 0.3** | **2.89%** | **2.92%** | **0.966** | **7.8** |
+| FactorLens 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 4.6 |
+
+The clone tracks more closely than before on 22 of the 23 funds; the exception is an S&P
+500 index fund (0.60% before, 0.63% now). Plain least squares on the same 81 ETFs tracks
+about as closely (2.84%) but trades twice as much and holds 13 ETFs. On the 41
+development funds the picture is the same: a median of 3.66% before and 2.93% now. By
+category, over the whole benchmark:
+
+| Category | Funds | Before | 0.3 | Example |
+|---|---|---|---|---|
+| Index funds | 4 | 0.6% | 0.6% | VFIAX 0.6% |
+| US large-cap | 15 | 3.9% | 3.1% | AGTHX 2.2% |
+| US small/mid-cap | 7 | 4.2% | 3.2% | VEXPX 2.1% |
+| International | 10 | 4.5% | 3.7% | HAINX 3.0% |
+| Global | 2 | 3.1% | 2.3% | ANWPX 2.3% |
+| Balanced | 9 | 2.4% | 1.8% | FBALX 1.3% |
+| Bond | 9 | 1.9% | 1.8% | VBTLX 1.2% |
+| Sector | 7 | 13.3% | 4.6% | VGHCX 3.7% |
+| Single stock | 1 | 11.8% | 10.7% | BRK-B |
+
+What remains is mostly what the manager does that no ETF combination can: picking
+individual stocks. For a fund with 2% tracking error that is a small bet; for ARKK (21%)
+or Berkshire Hathaway (11%) it is a large part of the story. The protocol, the results for every
+fund, a comparison of seven estimation methods and the commands to reproduce every
+number are in [benchmarks/](benchmarks/README.md).
+
+## How it works
+
+1. **Building blocks.** 81 liquid US-listed ETFs: size and style, the eleven sectors, 16
+   industries, factor ETFs, developed and emerging regions, 18 bond ETFs, REITs, gold and
+   commodities. ETFs join once they have enough history.
+2. **Monthly re-estimation.** At each month-end the long-only ETF mix that best follows
+   the fund's daily excess returns over the past 18 months is found by constrained least
+   squares. Recent days count more (63-day half-life), weights the data cannot tell apart
+   stay close to last month's, and positions below 2% are dropped.
+3. **Realistic trading.** The new weights are traded at the next day's close and drift
+   with prices until the following month. Every trade pays 5 bp; anything not invested
+   sits in T-bills.
+4. **Honest measurement.** Tracking error, R² and the fund-minus-clone return are
+   computed on weekly out-of-sample returns, and the return gap is the difference in
+   compound growth. Yahoo Finance sometimes repeats a mutual fund's previous price and
+   catches up a day later, so a day on which the price did not change although the
+   market moved enough to move it is merged with the next. For funds and ETFs, prices
+   that jump and come back within days on a calm market are dropped as data errors, and
+   unadjusted splits are corrected.
+5. **Factor view.** Monthly excess returns are regressed on the Fama-French five factors
+   and momentum, with term and credit factors when the clone holds bonds, and the average
+   return is split into factor contributions and alpha.
+
+Funds priced outside US trading hours are converted to USD where needed and fitted on
+weekly returns.
+
+## Python
+
+```python
+from factorlens import ReplicationConfig, run_analysis
+
+fund = run_analysis("DODGX", start="2005-01-01", end="2026-09-01")
+fund.tracking["tracking_error"], fund.tracking["r_squared"]
+fund.allocation()  # the clone today, with expense ratios
+fund.attribution.table()  # factor loadings, t-stats, contributions
+
+mix = {"VTI": 60, "VXUS": 30, "BND": 10}
+three = ReplicationConfig(max_etfs=3)
+portfolio = run_analysis(mix, "2012-01-01", "2026-09-01", replication=three)
+```
+
+## Related tools
+
+Portfolio Visualizer offers factor regressions and manager performance analysis, and
+Interactive Brokers gives its clients a Mutual Fund Replicator that suggests ETFs in
+place of a mutual fund. FactorLens differs in that every clone is tested out of sample
+with trading costs, and it is open source under the MIT license, benchmark included.
+
+## Limitations
+
+- Stock selection cannot be cloned from returns. For concentrated funds the tracking
+  error stays high; that is the size of the active bet you pay for.
+- The ETFs are US-listed. Investors in the EU generally cannot buy them and need UCITS
+  equivalents, which FactorLens does not cover yet.
+- The first clone needs about 19 months of prices (18 to fit it), and figures from less
+  than a year of out-of-sample returns mean little: the verdict says so and leaves out
+  the ESMA screen.
+- Yahoo Finance data has gaps and errors, and Yahoo's terms allow personal use only.
+- The Kenneth French factors lag by one to two months, and they are long/short paper
+  portfolios: alpha against them is not a return you could have earned.
+- The closet-index screen uses the closest of the 81 ETFs instead of the fund's official
+  benchmark. Where one of them follows that benchmark, the thresholds are easier to
+  meet; where none does, as for total international or all-world indices, they can be
+  harder, so failing the screen does not clear a fund.
+- Only funds that still exist can be analysed, so any comparison across funds favours
+  the survivors.
+
+## Roadmap
+
+- UCITS building blocks for European investors, with a curated list of Xetra ETFs.
+- Look-through of US fund holdings from SEC N-PORT filings.
+- Screening many funds at once.
+
+## Development
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[app,dev]"
+pytest
+ruff check .
+```
+
+The tests run offline on synthetic data, the web app included. Among other things they
+check that changing a fund's returns from some date on leaves every earlier clone return
+unchanged. [benchmarks/](benchmarks/README.md) explains how to rerun the benchmark.
+
+## License and citation
+
+FactorLens is released under the [MIT license](LICENSE). If you use it in research, cite
+it with the metadata in [CITATION.cff](CITATION.cff).
+
+FactorLens is a research tool, not investment advice.
