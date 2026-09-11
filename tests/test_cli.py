@@ -1,7 +1,15 @@
 import pytest
 from fakes import analyse
 
+import fundclone
 from fundclone import cli
+
+
+def test_version(capsys):
+    with pytest.raises(SystemExit) as stop:
+        cli.main(["--version"])
+    assert stop.value.code == 0
+    assert capsys.readouterr().out == f"fundclone {fundclone.__version__}\n"
 
 
 def test_an_input_error_ends_with_a_message_not_a_traceback(monkeypatch, capsys):

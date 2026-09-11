@@ -9,7 +9,7 @@ import re
 
 import pandas as pd
 
-from fundclone import etfs
+from fundclone import __version__, etfs
 from fundclone.analysis import run_analysis
 from fundclone.attribution import FACTOR_NAMES
 from fundclone.data import REGIONS
@@ -56,6 +56,7 @@ def main(argv: list[str] | None = None) -> None:
         prog="fundclone",
         description="Clone a fund or a portfolio with ETFs and explain it with factors.",
     )
+    parser.add_argument("--version", action="version", version=f"fundclone {__version__}")
     parser.add_argument(
         "target", help='a Yahoo Finance ticker such as DODGX, or a portfolio: "VTI 60, BND 40"'
     )

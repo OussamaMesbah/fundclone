@@ -12,7 +12,7 @@ import streamlit as st  # noqa: E402
 from fakes import fake_factors, fake_info, fake_prices  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from fundclone import data  # noqa: E402
+from fundclone import data, etfs  # noqa: E402
 
 APP = str(Path(__file__).parents[1] / "streamlit_app.py")
 
@@ -30,6 +30,7 @@ def app(monkeypatch):
     monkeypatch.setattr(data, "load_french_factors", fake_factors)
     monkeypatch.setattr(data, "fetch_info", fake_info)
     st.cache_data.clear()
+    st.cache_resource.clear()
     return AppTest.from_file(APP, default_timeout=180)
 
 
@@ -59,9 +60,13 @@ def test_a_link_value_the_form_cannot_show_is_ignored(app):
     assert widget(app.selectbox, "ETFs in the clone").value == "Automatic"
 
 
-def test_the_app_falls_back_to_its_price_snapshot(app, monkeypatch):
+def test_the_app_falls_back_to_a_local_price_snapshot(app, monkeypatch, tmp_path):
+    snapshot = tmp_path / "prices.parquet"
+    tickers = ["AGTHX", *etfs.tickers(), "IEF", "LQD"]
+    fake_prices(tickers, "2000-01-01", "2030-01-01").to_parquet(snapshot)
+    monkeypatch.setenv("FUNDCLONE_SNAPSHOT", str(snapshot))
     monkeypatch.setattr(data, "fetch_prices", lambda tickers, start, end: pd.DataFrame())
-    app.query_params["ticker"] = "AGTHX"  # a benchmark fund, so it is in the snapshot
+    app.query_params["ticker"] = "AGTHX"
     app.run()
     assert not app.exception
     assert any("snapshot of" in element.value for element in app.caption)
@@ -73,3 +78,18 @@ def test_a_clone_in_cash_renders(app, monkeypatch):
     app.run()
     assert not app.exception
     assert any("only T-bills" in element.value for element in app.caption)
+
+
+def test_a_link_cannot_put_markdown_on_the_page(app):
+    app.query_params["portfolio"] = "[Sign in](https://evil.example/login) 60"
+    app.run()
+    assert not app.exception
+    shown = [element.value.replace("\\", "") for element in app.error]
+    assert shown and all("https://" not in text for text in shown)
+
+
+def test_a_link_with_a_malformed_ticker_is_ignored(app):
+    app.query_params["ticker"] = "[Sign in](https://evil.example/login)"
+    app.run()
+    assert not app.exception
+    assert not any("evil.example" in str(element.value) for element in app.markdown)

@@ -69,7 +69,14 @@ T = TypeVar("T")
 
 
 def _cache_file(kind: str, key: str, suffix: str) -> Path:
-    return CACHE_DIR / kind / (re.sub(r"[^A-Za-z0-9._=-]", "_", key) + suffix)
+    """The cache file for `key`, such as a ticker typed by a user. Characters outside a
+    small safe set become "_", and the resulting path must stay inside the cache folder."""
+    base = os.path.normpath(os.path.join(CACHE_DIR, kind))
+    name = re.sub(r"[^A-Za-z0-9._=-]", "_", key) + suffix
+    path = os.path.normpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):
+        raise ValueError(f"Unsafe cache key: {key!r}")
+    return Path(path)
 
 
 def _is_fresh(path: Path, max_age: float) -> bool:
@@ -175,12 +182,16 @@ def load_french_factors(region: str = "US", frequency: str = "monthly") -> pd.Da
     return five.join(momentum, how="inner")[[*FF6, "RF"]].dropna()
 
 
+_RETRIES = 5  # tickers retried one by one after a batch download leaves them out
+
+
 def fetch_prices(tickers: Iterable[str], start: str, end: str) -> pd.DataFrame:
     """Split- and dividend-adjusted daily closes from Yahoo Finance, one column per ticker.
 
     `end` is exclusive. Full histories are cached per ticker for 12 hours. Tickers
     without data are left out. yfinance's shared SQLite cache sometimes fails under
-    concurrent access, so tickers that come back empty are retried one by one.
+    concurrent access, so the first few tickers that come back empty are retried one by
+    one.
     """
     tickers = list(dict.fromkeys(tickers))
     closes: dict[str, pd.Series] = {}
@@ -193,7 +204,7 @@ def fetch_prices(tickers: Iterable[str], start: str, end: str) -> pd.DataFrame:
             closes[ticker] = cached
     if stale:
         downloaded = _download_closes(stale)
-        for ticker in [t for t in stale if t not in downloaded]:
+        for ticker in [t for t in stale if t not in downloaded][:_RETRIES]:
             downloaded.update(_download_closes([ticker]))
         for ticker in stale:
             path = _cache_file("prices", ticker, ".csv")

@@ -6,7 +6,9 @@ authors:
   - family-names: Mesbah
     given-names: Oussama
 repository-code: "https://github.com/OussamaMesbah/fundclone"
+url: "https://fundclone.streamlit.app"
 version: 0.3.0
+date-released: 2026-09-11
 license: MIT
 keywords:
   - portfolio replication

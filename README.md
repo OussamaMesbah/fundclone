@@ -16,8 +16,8 @@ much of the fund you get from the clone and what the manager adds on top after f
 
 - **A verdict.** How much of the fund's week-to-week behaviour a cheap ETF clone
   reproduces, how much faster or slower the fund grew than its clone after all fees
-  (with a 95% range), and whether it meets ESMA's screen for a potential closet index
-  fund.
+  (with a 95% range), and whether it meets the closet-indexing thresholds of an ESMA
+  working paper.
 - **A clone you can buy.** Typically seven to ten liquid ETFs, their weights, whole-share
   orders for any amount, what the fees add up to and a CSV to take to your broker. Cap
   it at three or five ETFs if you prefer something simpler.
@@ -26,6 +26,11 @@ much of the fund you get from the clone and what the manager adds on top after f
 
 It works for funds, ETFs and stocks with about 19 months of price history or more on
 Yahoo Finance, and for your own portfolio typed as `VTI 60, VXUS 30, BND 10`.
+
+> **Disclaimer.** FundClone is for research and education. It is not investment advice or
+> a recommendation to buy or sell any security, past performance does not predict future
+> results, and the data may contain errors. FundClone is not affiliated with Yahoo, ESMA,
+> Kenneth French or any fund company.
 
 ## Quickstart
 
@@ -60,6 +65,9 @@ locally:
 ```bash
 streamlit run streamlit_app.py
 ```
+
+The hosted app is a free, non-commercial demo. Factsheets uploaded there are read in memory
+and not stored.
 
 ## How accurate is it?
 
@@ -156,10 +164,13 @@ with trading costs, and it is open source under the MIT license, benchmark inclu
 - The first clone needs about 19 months of prices (18 to fit it), and figures from less
   than a year of out-of-sample returns mean little: the verdict says so and leaves out
   the ESMA screen.
-- Yahoo Finance data has gaps and errors, and Yahoo's terms allow personal use only.
+- Prices come from Yahoo Finance through yfinance. They have gaps and errors, and Yahoo's
+  terms allow personal, non-commercial use only, so the repository ships no Yahoo data.
 - The Kenneth French factors lag by one to two months, and they are long/short paper
   portfolios: alpha against them is not a return you could have earned.
-- The closet-index screen uses the closest of the 81 ETFs instead of the fund's official
+- The closet-index screen applies thresholds from an [ESMA working paper](https://www.esma.europa.eu/sites/default/files/library/esmawp-2020-2_closet_indexing.pdf)
+  (Danieli, Harris and Pichini, 2020), which states its authors' views, not an official
+  ESMA test. It uses the closest of the 81 ETFs instead of the fund's official
   benchmark. Where one of them follows that benchmark, the thresholds are easier to
   meet; where none does, as for total international or all-world indices, they can be
   harder, so failing the screen does not clear a fund.
@@ -172,7 +183,17 @@ with trading costs, and it is open source under the MIT license, benchmark inclu
 - Look-through of US fund holdings from SEC N-PORT filings.
 - Screening many funds at once.
 
-## Development
+## Contributing
+
+Contributions are welcome.
+[CONTRIBUTING.md](https://github.com/OussamaMesbah/fundclone/blob/master/CONTRIBUTING.md)
+explains the setup, the branch model (pull requests go to `dev`; `master` holds releases)
+and how a release is cut, and
+[benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/master/benchmarks/README.md)
+how to rerun the benchmark. Please follow the
+[code of conduct](https://github.com/OussamaMesbah/fundclone/blob/master/CODE_OF_CONDUCT.md)
+and report security problems privately, as described in
+[SECURITY.md](https://github.com/OussamaMesbah/fundclone/blob/master/SECURITY.md).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -183,8 +204,7 @@ ruff check .
 
 The tests run offline on synthetic data, the web app included. Among other things they
 check that changing a fund's returns from some date on leaves every earlier clone return
-unchanged. [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/master/benchmarks/README.md) explains how to rerun the benchmark, and
-[CONTRIBUTING.md](https://github.com/OussamaMesbah/fundclone/blob/master/CONTRIBUTING.md) how to contribute and cut a release.
+unchanged.
 
 ## License and citation
 

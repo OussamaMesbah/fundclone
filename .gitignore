@@ -19,3 +19,11 @@ benchmarks/data/
 # Local settings
 .DS_Store
 .streamlit/secrets.toml
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+
+# Local data: Yahoo Finance prices may not be redistributed
+data/
