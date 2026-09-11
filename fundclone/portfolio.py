@@ -11,6 +11,8 @@ import pandas as pd
 from fundclone.data import daily_returns
 
 MAX_LENGTH = 2000  # characters
+MAX_HOLDINGS = 30
+MAX_TICKER_LENGTH = 20
 # A ticker holds at least one letter, so that "VTI 60 40" is not read as VTI 6 and "0" 40,
 # and may start with ^ for an index such as ^GSPC.
 _TICKER = r"\^?(?=[0-9.\-=^]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9.\-=^]*"
@@ -20,6 +22,11 @@ _ENTRY = re.compile(rf"({_TICKER}){_GAP}(\d+(?:\.\d+)?)(?:\s*%)?")
 # Every space has exactly one place in this pattern, so a line that does not match is
 # rejected in linear time.
 _ENTRIES = re.compile(rf"{_TICKER}{_GAP}{_WEIGHT}(?:\s+{_TICKER}{_GAP}{_WEIGHT})*")
+
+
+def is_ticker(text: str) -> bool:
+    """Whether `text` looks like a Yahoo Finance symbol, such as AGTHX, EXS1.DE or ^GSPC."""
+    return len(text) <= MAX_TICKER_LENGTH and re.fullmatch(_TICKER, text) is not None
 
 
 def parse_portfolio(text: str) -> dict[str, float]:
@@ -37,6 +44,10 @@ def parse_portfolio(text: str) -> dict[str, float]:
         for match in _ENTRY.finditer(entry):
             ticker = match.group(1).upper()
             weights[ticker] = weights.get(ticker, 0.0) + float(match.group(2))
+    if len(weights) > MAX_HOLDINGS:
+        raise ValueError(f"A portfolio can have at most {MAX_HOLDINGS} holdings.")
+    if any(len(ticker) > MAX_TICKER_LENGTH for ticker in weights):
+        raise ValueError(f"Tickers have at most {MAX_TICKER_LENGTH} characters.")
     total = sum(weights.values())
     if total <= 0:
         raise ValueError("Enter at least one holding with a positive weight.")

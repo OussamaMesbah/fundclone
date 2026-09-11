@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/OussamaMesbah/fundclone/security/advisories/new
+    about: Please report security problems privately, not as an issue.
+  - name: Try the web app
+    url: https://fundclone.streamlit.app
+    about: See FundClone on a fund or portfolio of your choice.

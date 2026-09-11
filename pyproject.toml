@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -37,7 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-app = ["pdfplumber>=0.11", "plotly>=5.20", "streamlit>=1.56"]
+app = ["pdfplumber>=0.11.10", "plotly>=5.20", "streamlit>=1.56"]
 dev = ["pyarrow>=14", "pytest>=8", "ruff==0.16.7"]  # pinned: CI checks the formatting
 
 [project.scripts]
@@ -53,7 +53,7 @@ Changelog = "https://github.com/OussamaMesbah/fundclone/blob/master/CHANGELOG.md
 packages = ["fundclone"]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["data/", "docs/"]  # the web app's price snapshot and the screenshot
+exclude = [".devcontainer/", ".github/", "data/", "docs/"]  # not needed to build or use it
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

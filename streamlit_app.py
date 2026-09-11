@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import os
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -17,8 +19,8 @@ from fundclone import charts, etfs
 from fundclone.analysis import Analysis, run_analysis
 from fundclone.attribution import FACTOR_DESCRIPTIONS, FACTOR_NAMES
 from fundclone.data import REGIONS, fetch_info, fetch_prices, load_french_factors
-from fundclone.factsheet import parse_factsheet
-from fundclone.portfolio import parse_portfolio, whole_shares
+from fundclone.factsheet import parse_factsheet_safely
+from fundclone.portfolio import is_ticker, parse_portfolio, whole_shares
 from fundclone.replication import ReplicationConfig
 from fundclone.report import (
     EQUITY_SHARE_FOR_SCREEN,
@@ -60,6 +62,26 @@ DEFAULTS = {
     "rolling_window": 36,
 }
 PLOT_CONFIG = {"displaylogo": False}
+DISCLAIMER = (
+    "Research and education only: not investment advice or a recommendation to buy or sell "
+    "any security. Past performance does not predict future results, and the data may "
+    "contain errors. Prices come from Yahoo Finance for personal, non-commercial use. "
+    "FundClone is not affiliated with Yahoo, ESMA, Kenneth French or any fund company."
+)
+ESMA_PAPER = (
+    "https://www.esma.europa.eu/sites/default/files/library/esmawp-2020-2_closet_indexing.pdf"
+)
+_MARKDOWN = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$:])")
+_AUTOLINK = re.compile(r"(?i)(https?|www)(?=[:.])|(@)")
+
+
+def plain(text) -> str:
+    """Text for Streamlit's markdown that shows as written: links, formatting or LaTeX in
+    user input or third-party data are not rendered. Markdown turns bare web and e-mail
+    addresses into links whether or not they are escaped, so they get an invisible break."""
+    text = _AUTOLINK.sub(lambda m: m.group(0) + "\u200b", str(text))
+    return _MARKDOWN.sub(r"\\\1", text)
+
 
 METHOD = f"""
 **The clone.** At the end of every month FundClone looks at the fund's daily returns
@@ -93,14 +115,16 @@ zero, the manager added something cheap ETFs could not. A range that straddles z
 means the difference is within the noise.
 
 **Closet index screen.** For equity funds with a year or more of out-of-sample returns,
-FundClone applies the three returns-based thresholds ESMA used in its 2020 study of
-potential closet index funds: tracking error below 3%, R² above 95% and beta between
-0.95 and 1.05. ESMA measured them against each fund's own benchmark; FundClone uses the
-ETF, out of its {len(etfs.ETFS)}, that tracked the fund most closely. Where one of them
-follows the fund's benchmark, that makes the thresholds easier to meet. Where none does,
-as for total international or all-world indices, it can make them harder, so failing the
-screen does not clear a fund. An active fund that meets all three is a candidate for a
-closer look, not proof of anything; for an index fund it is expected.
+FundClone applies the three returns-based thresholds of an ESMA working paper on potential
+closet index funds ([Danieli, Harris and Pichini, 2020]({ESMA_PAPER})): tracking error
+below 3%, R² above 95% and beta between 0.95 and 1.05. The paper states its authors'
+views, not an official ESMA test. It measured the thresholds against each fund's own
+benchmark; FundClone uses the ETF, out of its {len(etfs.ETFS)}, that tracked the fund most
+closely. Where one of them follows the fund's benchmark, that makes the thresholds easier
+to meet. Where none does, as for total international or all-world indices, it can make
+them harder, so failing the screen does not clear a fund. An active fund that meets all
+three is a candidate for a closer look, not proof of anything; for an index fund it is
+expected.
 
 **Factor exposures.** A second, academic view regresses the fund's monthly excess returns
 on the Fama-French five factors and momentum, with term and credit factors for funds
@@ -108,20 +132,29 @@ that hold bonds, and splits the average return into factor contributions and alp
 
 **Data.** Prices and fund expense ratios from Yahoo Finance; factors and the T-bill rate
 from the Kenneth French data library, which lags by one to two months. ETF expense
-ratios as of {etfs.EXPENSE_RATIOS_AS_OF}. If Yahoo Finance does not answer, prices come
-from a snapshot that ships with the app, and the page says so.
+ratios as of {etfs.EXPENSE_RATIOS_AS_OF}. Yahoo Finance data is for personal,
+non-commercial use; this app is a free, non-commercial demo.
 
-FundClone is a research tool, not investment advice.
+**Privacy.** Uploaded factsheets are read in memory to find identifiers and are not
+stored. The app runs on Streamlit Community Cloud.
+
+{DISCLAIMER}
 """
 
-SNAPSHOT = Path(__file__).with_name("data") / "prices.parquet"  # see CONTRIBUTING.md
+# An optional local price snapshot for self-hosted deployments (see CONTRIBUTING.md). The
+# repository ships none, because Yahoo Finance data may not be redistributed.
+SNAPSHOT = Path(
+    os.environ.get("FUNDCLONE_SNAPSHOT", Path(__file__).with_name("data") / "prices.parquet")
+)
 
-live_prices = st.cache_data(ttl="6h", show_spinner=False)(fetch_prices)
+live_prices = st.cache_data(ttl=dt.timedelta(hours=6), max_entries=64, show_spinner=False)(
+    fetch_prices
+)
 
 
 @st.cache_resource(show_spinner=False)
 def snapshot() -> pd.DataFrame:
-    """Adjusted closes that ship with the app, for when Yahoo Finance does not answer."""
+    """The local price snapshot, if there is one, for when Yahoo Finance does not answer."""
     return pd.read_parquet(SNAPSHOT).astype(float) if SNAPSHOT.exists() else pd.DataFrame()
 
 
@@ -138,13 +171,14 @@ def prices_cached(tickers: list[str], start: str, end: str) -> pd.DataFrame:
     prices = pd.concat([live, stored.loc[period, fill]], axis=1).sort_index()
     prices.attrs["notes"] = [
         f"Yahoo Finance did not answer for {', '.join(fill)}, so their prices come from the "
-        f"snapshot of {stored.index[-1]:%Y-%m-%d} that ships with the app."
+        f"local price snapshot of {stored.index[-1]:%Y-%m-%d}."
     ]
     return prices
 
 
-factors_cached = st.cache_data(ttl="1d", show_spinner=False)(load_french_factors)
-info_cached = st.cache_data(ttl="1d", show_spinner=False)(fetch_info)
+DAY = dt.timedelta(days=1)
+factors_cached = st.cache_data(ttl=DAY, max_entries=16, show_spinner=False)(load_french_factors)
+info_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(fetch_info)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -286,7 +320,7 @@ def params_from_link() -> dict:
     """The defaults, overridden by what the URL carries; values that do not fit are ignored."""
     query = st.query_params
     params = dict(DEFAULTS)
-    if query.get("ticker"):
+    if query.get("ticker") and is_ticker(query["ticker"].strip()):
         params.update(mode="Fund", target=query["ticker"].strip().upper())
     elif query.get("portfolio"):
         params.update(mode="Portfolio", target=query["portfolio"])
@@ -418,20 +452,22 @@ def settings_form(initial: dict) -> dict | None:
 def factsheet_lookup() -> None:
     with st.expander("Find a ticker from a factsheet"):
         upload = st.file_uploader("Factsheet PDF", type="pdf")
+        st.caption(
+            "Pulls the fund name, ISINs and ticker candidates out of the first pages of a PDF. "
+            "Uploads are read in memory and not stored; the app runs on Streamlit Community "
+            "Cloud ([privacy policy](https://streamlit.io/privacy-policy))."
+        )
         if upload is None:
-            st.caption("Pulls the fund name, ISINs and ticker candidates out of a PDF.")
             return
         try:
-            info = parse_factsheet(upload)
-        except ModuleNotFoundError:
-            st.warning("Reading PDFs needs pdfplumber: `pip install pdfplumber`.")
+            info = parse_factsheet_safely(upload.getvalue())
+        except Exception:  # malformed, encrypted or oversized PDFs fail in the child process
+            st.warning("Could not read the PDF.")
             return
-        except Exception as exc:  # malformed or encrypted PDFs raise a range of errors
-            st.warning(f"Could not read the PDF: {exc}")
-            return
-        st.markdown(f"**{info['fund_name'] or 'Unknown fund'}**")
-        st.markdown(f"Ticker candidates: {', '.join(info['ticker_candidates']) or 'none found'}")
-        st.markdown(f"ISINs: {', '.join(info['isins']) or 'none found'}")
+        candidates = ", ".join(info["ticker_candidates"]) or "none found"
+        st.markdown(f"**{plain(info['fund_name'] or 'Unknown fund')}**")
+        st.markdown(f"Ticker candidates: {plain(candidates)}")
+        st.markdown(f"ISINs: {plain(', '.join(info['isins']) or 'none found')}")
 
 
 def orders(allocation: pd.DataFrame, prices: pd.Series, amount: float) -> pd.DataFrame:
@@ -477,7 +513,7 @@ def fee_cost(amount: float, expense_ratio: float, years: int) -> float:
 def render_verdict(a: Analysis) -> None:
     t = a.tracking
     with st.container(border=True):
-        st.markdown(" ".join(headline(a)))
+        st.markdown(plain(" ".join(headline(a))))
 
     short = too_short(a)
     caveat = (
@@ -534,28 +570,28 @@ def render_verdict(a: Analysis) -> None:
         )
         if check["flagged"] and check["passive"]:
             st.caption(
-                f"ESMA closet-index screen: {measured}. All three thresholds are met, as "
-                "expected for an index fund; an actively managed fund that meets them stays "
-                "very close to its benchmark."
+                f"Closet-index screen: {measured}. All three thresholds are met, as expected "
+                "for an index fund; an actively managed fund that meets them stays very close "
+                "to its benchmark."
             )
         elif check["flagged"]:
             st.warning(
-                f"Meets all three of ESMA's screening thresholds for a potential closet index "
-                f"fund ({measured}). If {a.label} is actively managed, that is worth a closer "
-                "look before paying active fees; for an index fund it is expected. The Method "
-                "tab explains the screen and its limits."
+                f"Meets all three closet-indexing thresholds of an ESMA working paper "
+                f"({measured}). If {a.label} is actively managed, that is worth a closer look "
+                "before paying active fees; for an index fund it is expected. The Method tab "
+                "explains the screen and its limits."
             )
         else:
             failed = [label for label, ok in check["checks"].items() if not ok]
             st.caption(
-                f"ESMA closet-index screen: {measured}. Not met: {', '.join(failed)}. Against "
-                "the fund's own benchmark the result could differ; the Method tab explains "
-                "the screen and its limits."
+                f"Closet-index screen: {measured}. Not met: {', '.join(failed)}. Against the "
+                "fund's own benchmark the result could differ; the Method tab explains the "
+                "screen and its limits."
             )
     elif not a.holdings and a.equity_share >= EQUITY_SHARE_FOR_SCREEN:
-        st.caption("The ESMA closet-index screen needs a year or more of out-of-sample returns.")
+        st.caption("The closet-index screen needs a year or more of out-of-sample returns.")
     for note in a.notes:
-        st.caption(note)
+        st.caption(plain(note))
 
 
 def render_clone(a: Analysis, params: dict, mode: str) -> None:
@@ -573,6 +609,7 @@ def render_clone(a: Analysis, params: dict, mode: str) -> None:
         )
     with right:
         st.markdown("**Build it**")
+        st.caption("An illustration at the latest prices, not a recommendation to trade.")
         amount_col, years_col = st.columns([3, 2])
         amount = amount_col.number_input("Amount, USD", 1_000, 10_000_000, 10_000, step=1_000)
         years = years_col.number_input("Years", 1, 40, 10)
@@ -750,7 +787,7 @@ def render_attribution(a: Analysis, mode: str) -> None:
 def render(a: Analysis, params: dict, mode: str) -> None:
     r = a.returns
     title = a.name if a.holdings else f"{a.name} ({a.label})"
-    st.subheader(title)
+    st.subheader(plain(title))
     st.caption(f"Out of sample {r.index[0]:%b %Y} to {r.index[-1]:%b %Y} · returns in USD")
     render_verdict(a)
     clone_tab, performance_tab, factor_tab, method_tab = st.tabs(
@@ -781,8 +818,12 @@ def main() -> None:
         "Clone any fund or portfolio with a handful of low-cost ETFs, "
         "and see what the manager adds after fees."
     )
+    st.caption(DISCLAIMER)
     if not params["target"]:
         st.error("Enter a ticker or a portfolio.")
+        return
+    if params["mode"] == "Fund" and not is_ticker(params["target"]):
+        st.error("That does not look like a Yahoo Finance ticker, such as AGTHX or EXS1.DE.")
         return
     if params["start"] >= params["end"]:
         st.error("The start date must come before the end date.")
@@ -794,7 +835,7 @@ def main() -> None:
         with st.spinner("Loading prices and building the clone"):
             analysis = analyse(**params)
     except Exception as exc:  # data gaps, bad tickers and bad portfolios surface as messages
-        st.error(f"Could not build the clone: {exc}")
+        st.error(f"Could not build the clone: {plain(exc)}")
         return
     render(analysis, params, "dark" if st.context.theme.type == "dark" else "light")
 

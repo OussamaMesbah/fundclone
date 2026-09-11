@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- A security policy, a code of conduct, issue and pull-request templates, and a
+  `fundclone --version` flag.
+- A `dev` branch for upcoming changes; `master` is protected and takes only pull requests
+  that pass CI.
+- A dry-run mode for the release workflow, started by hand on a branch.
+- A visible disclaimer and data attribution in the app and the README, and a privacy note
+  for factsheet uploads.
+
+### Security
+- Text from links, uploads and data sources is shown as plain text, and tickers in links
+  are checked, so a crafted link cannot put its own links on the page.
+- Factsheet PDFs are read in a separate process with limits on size, pages, memory and
+  time.
+- Portfolios have at most 30 holdings, the price cache a fixed number of entries, and
+  failed downloads are retried for a few tickers only.
+- Cache paths built from user input must stay inside the cache folder.
+- The workflows pin their actions to commit SHAs and do not keep the checkout token, and
+  the web app's dependencies are pinned in requirements.txt.
+
+### Removed
+- The Yahoo Finance price snapshot in `data/`: Yahoo's data may not be redistributed.
+  Self-hosted deployments can build their own for personal use.
+
 ## 0.3.0 (2026-09-11)
 
 Renamed from FactorLens to FundClone (package and command `fundclone`, web app at
@@ -12,7 +38,7 @@ do what this fund does, and what does the manager add after fees?
   bonds, gold and commodities.
 - A verdict: out-of-sample tracking error and R², the gap in compound growth between
   fund and clone after fees with a 95% range, the clone's expense ratio against the
-  fund's, and ESMA's screen for potential closet index funds.
+  fund's, and the closet-indexing thresholds of an ESMA working paper.
 - A clone you can buy: current weights, whole-share orders for an amount, fees over a
   horizon and a CSV export. An optional cap on the number of ETFs.
 - Links that carry every setting (`?ticker=AGTHX&start=2015-01-01&etfs=5`).

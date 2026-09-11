@@ -1,0 +1,10 @@
+[server]
+# Factsheet PDFs are small; a low limit keeps uploads from using up the app's memory.
+maxUploadSize = 5
+
+[client]
+# Show only the type of an unexpected error, not its traceback.
+showErrorDetails = "type"
+
+[browser]
+gatherUsageStats = false

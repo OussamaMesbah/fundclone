@@ -2,5 +2,24 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  # requirements.txt pins the web app's dependencies for Streamlit Community Cloud.
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: monthly
+    versioning-strategy: increase-if-necessary
+    groups:
+      python:
+        patterns: ["*"]
+    commit-message:
+      prefix: deps
