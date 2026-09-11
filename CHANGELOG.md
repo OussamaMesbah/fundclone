@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-09-11)
+
+Security hardening and a setup for outside contributors. How clones are estimated and
+measured is unchanged, so the benchmark results of 0.3.0 still hold.
+
 ### Added
 - A security policy, a code of conduct, issue and pull-request templates, and a
   `fundclone --version` flag.
