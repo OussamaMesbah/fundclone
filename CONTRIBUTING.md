@@ -64,9 +64,14 @@ python -m benchmarks.download --snapshot data/prices.parquet
 
 ## Releases
 
-1. On `dev`, set the new version in `pyproject.toml`, `fundclone/__init__.py` and
-   `CITATION.cff` (a test checks that they agree), set `date-released` in `CITATION.cff`,
-   and turn the "Unreleased" heading in `CHANGELOG.md` into the version and date.
+Between releases, `dev` carries a development version such as `0.5.0.dev0`, and
+`CITATION.cff` describes the latest release. `tests/test_version.py` checks both.
+
+1. On a branch off `dev`, set the release version (for example `0.5.0`) in
+   `pyproject.toml` and `fundclone/__init__.py`, and `version` and `date-released` in
+   `CITATION.cff`. In `CHANGELOG.md`, turn the "Unreleased" heading into the version and
+   date, and add a new empty "Unreleased" heading above it. Merge the pull request into
+   `dev`.
 2. Optionally run the release workflow as a dry run: `gh workflow run release.yml --ref dev`.
 3. Open a pull request from `dev` into `master` and merge it with a merge commit once CI
    passes.
@@ -74,11 +79,15 @@ python -m benchmarks.download --snapshot data/prices.parquet
 
    ```bash
    git switch master && git pull
-   git tag -a v0.4.0 -m "FundClone 0.4.0"
-   git push origin v0.4.0
+   git tag -a v0.5.0 -m "FundClone 0.5.0"
+   git push origin v0.5.0
    ```
 
 5. The release workflow runs the tests, checks that the tag matches the version, builds the
    package and creates the GitHub release with the changelog section as its notes. It also
    publishes to PyPI once trusted publishing is set up (environment `pypi`, repository
    variable `PUBLISH_TO_PYPI=true`).
+6. Fast-forward `dev` to the merge commit on `master`, so that both branches match. The
+   `dev` ruleset allows no direct pushes, so the maintainer pauses it for this one update.
+   Then open a pull request into `dev` that sets the next development version, such as
+   `0.6.0.dev0`.
