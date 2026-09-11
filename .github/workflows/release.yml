@@ -51,7 +51,13 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           awk -v v="$VERSION" 'index($0, "## " v " ") == 1 {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
-          test -s notes.md || { echo "no CHANGELOG section for $VERSION"; exit 1; }
+          if [ ! -s notes.md ]; then
+            case "$GITHUB_REF" in
+              refs/tags/*) echo "no CHANGELOG section for $VERSION"; exit 1 ;;
+              # A development version such as 0.5.0.dev0 has no section yet.
+              *) echo "Dry run of $VERSION: no CHANGELOG section yet." | tee notes.md ;;
+            esac
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
