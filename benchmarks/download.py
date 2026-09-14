@@ -3,9 +3,10 @@
     python -m benchmarks.download
 
 Writes closes.parquet (adjusted daily closes, full history, of every ETF in
-fundclone.etfs and every fund in funds.csv) and rf.csv (the daily one-month T-bill
-rate from the Kenneth French data library) to benchmarks/data, or to --out. Yahoo
-Finance revises history now and then, so a fresh snapshot can move the results slightly.
+fundclone.etfs, the exchange rates of ETFs quoted in other currencies, and every fund in
+funds.csv) and rf.csv (the daily one-month T-bill rate from the Kenneth French data
+library) to benchmarks/data, or to --out. Yahoo Finance revises history now and then, so
+a fresh snapshot can move the results slightly.
 
     python -m benchmarks.download --snapshot data/prices.parquet
 
@@ -22,7 +23,7 @@ import pandas as pd
 
 from benchmarks.run import DATA_DIR, FUNDS_FILE
 from fundclone import etfs
-from fundclone.data import fetch_prices, load_french_factors
+from fundclone.data import fetch_prices, fx_ticker, load_french_factors
 
 SNAPSHOT_START = "2004-01-01"
 
@@ -35,7 +36,8 @@ def main(argv: list[str] | None = None) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    tickers = [*etfs.tickers(), *pd.read_csv(FUNDS_FILE)["ticker"]]
+    rates = sorted({fx_ticker(etf.currency) for etf in etfs.ETFS if fx_ticker(etf.currency)})
+    tickers = [*(etf.ticker for etf in etfs.ETFS), *rates, *pd.read_csv(FUNDS_FILE)["ticker"]]
     tomorrow = (pd.Timestamp.today() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
     prices = fetch_prices(tickers, "1990-01-01", tomorrow)
     prices.to_parquet(out / "closes.parquet")

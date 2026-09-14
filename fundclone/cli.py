@@ -36,17 +36,18 @@ def _positive(text: str) -> int:
     return int(text)
 
 
-def _asset_classes(parser: argparse.ArgumentParser, text: str | None) -> list[str] | None:
-    """Asset-class names from a comma-separated list, matched regardless of case."""
+def _asset_classes(
+    parser: argparse.ArgumentParser, text: str | None, etf_set: str = etfs.DEFAULT_SET
+) -> list[str] | None:
+    """Asset-class names of a set from a comma-separated list, matched regardless of case."""
     if not text:
         return None
-    known = {name.lower(): name for name in etfs.ASSET_CLASSES}
+    offered = etfs.asset_classes(etf_set)
+    known = {name.lower(): name for name in offered}
     chosen = []
     for name in (part.strip() for part in text.split(",")):
         if name.lower() not in known:
-            parser.error(
-                f"unknown asset class {name!r}; choose from: {', '.join(etfs.ASSET_CLASSES)}"
-            )
+            parser.error(f"unknown asset class {name!r}; choose from: {', '.join(offered)}")
         chosen.append(known[name.lower()])
     return chosen
 
@@ -68,8 +69,16 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--max-etfs", type=_positive, help="cap on the number of ETFs in the clone")
     parser.add_argument(
+        "--etf-set",
+        type=str.upper,
+        choices=list(etfs.SETS),
+        default=etfs.DEFAULT_SET,
+        help="the set of ETFs the clone is built from (default: US)",
+    )
+    parser.add_argument(
         "--asset-classes",
-        help=f"comma-separated subset of: {', '.join(etfs.ASSET_CLASSES)}",
+        help="comma-separated groups of the ETF set, for the US set: "
+        + ", ".join(etfs.ASSET_CLASSES),
     )
     parser.add_argument("--window", type=int, default=378, help="estimation window, trading days")
     parser.add_argument("--rebalance", choices=["M", "Q"], default="M")
@@ -84,7 +93,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.start >= args.end:
         parser.error("--start must come before --end")
-    classes = _asset_classes(parser, args.asset_classes)
+    classes = _asset_classes(parser, args.asset_classes, args.etf_set)
     # yfinance's 404 messages repeat ours. Keep them off the terminal without raising the
     # logger's level: fundclone.data reads them to notice when Yahoo limits requests.
     yahoo = logging.getLogger("yfinance")
@@ -107,6 +116,7 @@ def main(argv: list[str] | None = None) -> None:
             asset_classes=classes,
             frequency=args.frequency,
             region=args.region,
+            etf_set=args.etf_set,
         )
     except ValueError as exc:  # bad tickers, portfolios, settings and too-short histories
         parser.exit(1, f"fundclone: {exc}\n")
@@ -119,8 +129,11 @@ def main(argv: list[str] | None = None) -> None:
 
     allocation = a.allocation()
     print(f"\nClone as of {a.replication.weights.index[-1]:%Y-%m-%d}:")
+    ticker_width = max(6, int(allocation["ETF"].str.len().max()))
+    name_width = max(34, int(allocation["Name"].str.len().max()))
     for _, row in allocation.iterrows():
-        print(f"  {row['ETF']:<6} {row['Name']:<34} {row['Weight']:>7.1%}")
+        line = f"  {row['ETF']:<{ticker_width}} {row['Name']:<{name_width}} {row['Weight']:>7.1%}"
+        print(f"{line}  {row['ISIN']}".rstrip() if "ISIN" in allocation else line)
 
     perf = a.performance.copy()
     for column in ["annual_return", "volatility", "max_drawdown", "total_return"]:

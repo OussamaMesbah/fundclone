@@ -25,6 +25,8 @@ import requests
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
+from fundclone.factsheet import is_valid_isin
+
 FRENCH_BASE_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp"
 CACHE_DIR = Path(os.environ.get("FUNDCLONE_CACHE", Path.home() / ".cache" / "fundclone"))
 PRICE_MAX_AGE = 12 * 3600  # seconds
@@ -377,6 +379,31 @@ def fetch_info(ticker: str) -> dict:
     return info
 
 
+def yahoo_symbols(isin: str, limit: int = 5) -> list[dict[str, str]]:
+    """The Yahoo Finance symbols that Yahoo's search lists for an ISIN, with name, type and
+    exchange, or an empty list.
+
+    The search covers many European funds but not all, and can return another share class
+    of the same fund, so the results are candidates to check, not an answer.
+    """
+    if not is_valid_isin(isin):
+        raise ValueError(f"{isin!r} is not a valid ISIN.")
+    try:
+        quotes = yf.Search(isin, max_results=limit).quotes
+    except Exception:  # rate limits and network trouble surface as assorted errors
+        return []
+    return [
+        {
+            "symbol": quote["symbol"],
+            "name": quote.get("longname") or quote.get("shortname") or "",
+            "type": quote.get("quoteType") or "",
+            "exchange": quote.get("exchDisp") or quote.get("exchange") or "",
+        }
+        for quote in quotes
+        if quote.get("symbol")
+    ]
+
+
 def fx_ticker(currency: str) -> str | None:
     """Yahoo symbol quoting the USD price of one unit of `currency`; None for USD.
 
@@ -441,9 +468,9 @@ def _typical_move(prices: pd.Series) -> float:
     return _ROBUST_SIGMA * float(moves.median()) if len(moves) else 0.0
 
 
-def _too_volatile(prices: pd.Series) -> bool:
-    """Whether a data error could not be told from a genuine move in this series."""
-    return ERROR_SIGMAS * _typical_move(prices) > ERROR_FLOOR
+def _too_volatile(prices: pd.Series, floor: float = ERROR_FLOOR) -> bool:
+    """Whether a data error of more than `floor` could not be told from a genuine move."""
+    return ERROR_SIGMAS * _typical_move(prices) > floor
 
 
 def _calm(prices: pd.Series, market_returns: pd.DataFrame, limit: float) -> np.ndarray:
@@ -453,25 +480,29 @@ def _calm(prices: pd.Series, market_returns: pd.DataFrame, limit: float) -> np.n
 
 
 def drop_price_errors(
-    prices: pd.Series, market_returns: pd.DataFrame, days: int = 5, tolerance: float = 0.03
+    prices: pd.Series,
+    market_returns: pd.DataFrame,
+    days: int = 5,
+    tolerance: float = 0.03,
+    floor: float = ERROR_FLOOR,
 ) -> pd.Series:
     """Remove prices that jump away and come back within a few days while the market is calm.
 
-    A jump is a move of more than ERROR_FLOOR on a day when the median reference ETF moved
-    less than a quarter as much. If the price returns to within `tolerance` of its level
-    before the jump in at most `days` days, the prices in between are data errors, such as
-    a misplaced decimal point, and are dropped. Series too volatile for an error to stand
-    out are returned unchanged.
+    A jump is a move of more than `floor` (ERROR_FLOOR unless given) on a day when the
+    median reference ETF moved less than a quarter as much. If the price returns to within
+    `tolerance` of its level before the jump in at most `days` days, the prices in between
+    are data errors, such as a misplaced decimal point, and are dropped. Series too volatile
+    for an error to stand out are returned unchanged.
     """
-    if _too_volatile(prices):
+    if _too_volatile(prices, floor):
         return prices
     values = prices.to_numpy(dtype=float)
-    calm = _calm(prices, market_returns, ERROR_FLOOR)
+    calm = _calm(prices, market_returns, floor)
     bad = np.zeros(len(values), dtype=bool)
     good, i = 0, 1  # the last good price, and the price being checked
     while i < len(values):
         back = None
-        if abs(values[i] / values[good] - 1) > ERROR_FLOOR and calm[i]:
+        if abs(values[i] / values[good] - 1) > floor and calm[i]:
             back = next(
                 (
                     k

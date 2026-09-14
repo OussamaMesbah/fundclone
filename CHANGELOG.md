@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- UCITS building blocks for investors in the EU: 47 UCITS ETFs and a gold ETC on Xetra with
+  ISINs and total expense ratios, chosen as the ETF set in the app (`?set=UCITS`), on the
+  command line (`--etf-set UCITS`) and in the benchmark. Their euro prices are converted
+  to USD, and known errors in Yahoo's Xetra prices are left out. The analysis points to
+  them for funds priced in European hours and warns that their Xetra prices add timing
+  noise for funds priced in US hours.
+- A lookup that lists the Yahoo Finance symbols for an ISIN, also for the ISINs found in a
+  factsheet, as candidates to check.
+- The benchmark can start scoring at a later date (`--eval-start`) and runs on either ETF
+  set.
 - The verdict also sets the fund against the closest single ETF, with a 95% range: how
   much the fund returned beyond one simple ETF.
 - What switching costs: a warning for share classes whose name implies a sales load, the

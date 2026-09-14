@@ -318,3 +318,29 @@ def test_during_a_rate_limit_earlier_prices_are_used_with_a_note(cache, monkeypa
     prices = data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")
     assert prices["AAA"].tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
     assert "limiting requests" in prices.attrs["notes"][0]
+
+
+def test_yahoo_symbols_for_an_isin(monkeypatch):
+    quotes = [
+        {
+            "symbol": "HJUA.F",
+            "longname": "DWS Top Dividende",
+            "quoteType": "ETF",
+            "exchDisp": "Frankfurt",
+        },
+        {"longname": "without a symbol"},
+    ]
+    monkeypatch.setattr(data.yf, "Search", lambda isin, max_results: SimpleNamespace(quotes=quotes))
+    assert data.yahoo_symbols("DE0009848119") == [
+        {"symbol": "HJUA.F", "name": "DWS Top Dividende", "type": "ETF", "exchange": "Frankfurt"}
+    ]
+    with pytest.raises(ValueError, match="not a valid ISIN"):
+        data.yahoo_symbols("DE0009848118")  # wrong check digit
+
+
+def test_yahoo_symbols_is_empty_when_the_search_fails(monkeypatch):
+    def failing(isin, max_results):
+        raise RuntimeError("rate limited")
+
+    monkeypatch.setattr(data.yf, "Search", failing)
+    assert data.yahoo_symbols("DE0009848119") == []

@@ -50,14 +50,34 @@ emerging markets (7), bonds (18) and real assets (3). Their net expense ratios a
 September 2026. At a rebalance, an ETF is eligible only if it has returns over the whole
 estimation window, so a clone never uses an ETF before it had enough history.
 
+For investors in the EU, a second set holds 47 UCITS ETFs and a gold ETC on Xetra in ten
+groups: world, US, European, Asia-Pacific and emerging-market equity, world factors, world
+sectors, euro bonds, global bonds and real assets. Their ISINs and total expense ratios come
+from justETF (14 September 2026). Their euro prices are converted to USD with Yahoo's
+exchange rate, and the fit uses weekly returns, because they trade in European hours. A
+scan of every series found a few errors in Yahoo's Xetra prices: mis-scaled or stale
+quotes after a listing, and single days that jump by 13-16% and reverse while the market
+is flat. They are listed in `DATA_FROM` and `BAD_DAYS` in `fundclone/etfs.py` and left out.
+
+For the region of the factor model, each equity group counts with its share of US stocks:
+1 for US groups, 0 for other regions, and about 0.7, the US weight of the MSCI World, for
+world groups.
+
+The UCITS set suits funds priced in European hours. A fund priced at the US close moves
+for four and a half hours after Xetra has closed: an S&P 500 ETF on Xetra, converted to
+USD, differs from SPY by 7.8% a year on weekly returns. On the benchmark over 2018 to
+2026 the median weekly tracking error is 8.5% with UCITS ETFs against 3.2% with US-listed
+ones, so the analysis says so when UCITS ETFs are chosen for a fund priced in US hours,
+and points to them for a fund priced in European hours.
+
 ## 4. The walk-forward clone
 
 - **Signal dates.** The last trading day of each month (or quarter), once the estimation
   window is full.
 - **Window.** The past 378 trading days, about 18 months.
-- **Returns.** Daily excess returns over the T-bill rate. When the fund is priced outside
-  US trading hours, weekly returns (weeks ending on Friday) instead, which absorb the
-  timing mismatch.
+- **Returns.** Daily excess returns over the T-bill rate. When the fund or the ETFs are
+  priced outside US trading hours, as the UCITS ETFs on Xetra are, weekly returns (weeks
+  ending on Friday) instead, which absorb much of the timing mismatch.
 - **Estimator.** With $y_t$ the fund's excess return, $x_t$ the ETFs' excess returns and
   $w_{\text{prev}}$ last month's weights, the weights solve
 
@@ -159,7 +179,8 @@ sales load and before tax (`fundclone/costs.py`).
 
 ## 10. Limitations
 
-Stock selection cannot be cloned from returns; the ETFs are US-listed; the ETF list was
+Stock selection cannot be cloned from returns; UCITS ETFs suit only funds priced in
+European hours; the ETF list was
 picked in 2026 and closed ETFs are missing from it; only funds that still exist can be
 analysed; Yahoo Finance data has gaps and errors and is licensed for personal use; the
 French factors lag by one to two months and are paper portfolios. The
