@@ -52,8 +52,8 @@ American Funds Growth Fd of Amer A (AGTHX), out of sample 2006-08-02 to 2026-09-
 
 A clone of 10 ETFs explains 98% of the variation in AGTHX's weekly returns out of sample, with a tracking error of 2.3% a year.
 The clone costs 0.27% a year in ETF fees; the fund charges 0.59%.
-AGTHX returned 0.2% a year more than its clone after all fees; the 95% range is -0.9% to +1.3%, so the gap is within the noise.
-The closest single ETF, IWF, tracks with 4.2% tracking error.
+AGTHX returned 0.2% a year more than its clone after all fees; the 95% range is -0.8% to +1.3%, so the gap is within the noise.
+The closest single ETF, IWF, tracks with 4.2% tracking error; against it alone, AGTHX returned 1.9% a year less (95% range -3.8% to +0.0%).
 
 Clone as of 2026-09-01:
   IWF    Russell 1000 Growth                  32.0%
