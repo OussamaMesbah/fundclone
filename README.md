@@ -24,6 +24,9 @@ much of the fund you get from the clone and what the manager adds on top after f
 - **What switching would cost.** The tax on gains you would realise by selling the fund,
   how long the lower fees take to earn it back, a warning for share classes that charge a
   sales load, and how much the clone trades against what the fund reports.
+- **For investors in the EU.** 47 UCITS ETFs and a gold ETC on Xetra as a second set of
+  building blocks, for funds priced in European hours, and a lookup that finds a European
+  fund's Yahoo Finance symbol from its ISIN.
 - **An X-ray.** Fama-French factor exposures with Newey-West errors, how they drifted
   over time, and the single ETF that comes closest to the fund.
 
@@ -130,7 +133,8 @@ and references, is in
 
 1. **Building blocks.** 81 liquid US-listed ETFs: size and style, the eleven sectors, 16
    industries, factor ETFs, developed and emerging regions, 18 bond ETFs, REITs, gold and
-   commodities. ETFs join once they have enough history.
+   commodities. ETFs join once they have enough history. For investors in the EU there is
+   a second set of 47 UCITS ETFs and ETCs on Xetra, whose euro prices are converted to USD.
 2. **Monthly re-estimation.** At each month-end the long-only ETF mix that best follows
    the fund's daily excess returns over the past 18 months is found by constrained least
    squares. Recent days count more (63-day half-life), weights the data cannot tell apart
@@ -181,8 +185,11 @@ is open source under the MIT license, benchmark included.
 
 - Stock selection cannot be cloned from returns. For concentrated funds the tracking
   error stays high; that is the size of the active bet you pay for.
-- The ETFs are US-listed. Investors in the EU generally cannot buy them and need UCITS
-  equivalents, which FundClone does not cover yet.
+- Investors in the EU generally cannot buy the US-listed ETFs. The UCITS set suits funds
+  priced in European hours. For funds priced in US hours its Xetra prices, set four and a
+  half hours earlier, add timing noise: over 2018 to 2026 the benchmark's median weekly
+  tracking error is 8.5% with UCITS ETFs against 3.2% with US-listed ones, and 8.6%
+  against 1.1% for index funds (see benchmarks/).
 - The first clone needs about 19 months of prices (18 to fit it), and figures from less
   than a year of out-of-sample returns mean little: the verdict says so and leaves out
   the ESMA screen.
@@ -208,7 +215,8 @@ is open source under the MIT license, benchmark included.
 
 ## Roadmap
 
-- UCITS building blocks for European investors, with a curated list of Xetra ETFs.
+- UCITS counterparts for the US building blocks, so that the clone of a US fund can be
+  bought in the EU.
 - Look-through of US fund holdings from SEC N-PORT filings.
 - Screening many funds at once.
 

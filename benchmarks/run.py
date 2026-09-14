@@ -31,6 +31,8 @@ from fundclone.data import (
     daily_returns,
     drop_price_errors,
     drop_stale_prices,
+    fx_ticker,
+    to_usd,
     weekly_returns,
 )
 from fundclone.estimators import make_estimator
@@ -84,19 +86,24 @@ def checked(estimator):
     return estimate
 
 
-def universe_for(name: str, legacy: str, prices: pd.DataFrame | None = None) -> list[str]:
-    """ "legacy" (the fund's old hand-picked set), "all" (every ETF), "traded-by:DATE" (every
-    ETF with a price on or before DATE, the list an investor could have known then) or a
-    comma list."""
+def universe_for(
+    name: str,
+    legacy: str,
+    prices: pd.DataFrame | None = None,
+    etf_set: str = etfs.DEFAULT_SET,
+) -> list[str]:
+    """ "legacy" (the fund's old hand-picked set), "all" (every ETF of `etf_set`),
+    "traded-by:DATE" (every ETF of the set with a price on or before DATE, the list an
+    investor could have known then) or a comma list."""
     if name == "legacy":
         return LEGACY[legacy]
     if name == "all":
-        return etfs.tickers()
+        return etfs.tickers(etf_set=etf_set)
     if name.startswith("traded-by:"):
         date = pd.Timestamp(name.partition(":")[2])
         return [
             ticker
-            for ticker in etfs.tickers()
+            for ticker in etfs.tickers(etf_set=etf_set)
             if prices is not None
             and ticker in prices
             and prices[ticker].first_valid_index() <= date
@@ -110,9 +117,17 @@ def _init(
     estimator: str | None,
     config: ReplicationConfig,
     clean: bool,
+    etf_set: str = etfs.DEFAULT_SET,
+    eval_start: pd.Timestamp = EVAL_START,
 ):
-    prices = pd.read_parquet(prices_path)
+    prices = etfs.without_known_errors(pd.read_parquet(prices_path))
+    for etf in etfs.ETFS:  # ETFs quoted in another currency, such as UCITS ETFs in EUR
+        rate = fx_ticker(etf.currency)
+        if rate and etf.ticker in prices and rate in prices:
+            prices[etf.ticker] = to_usd(prices[etf.ticker].dropna(), prices[rate])
     _state["prices"] = prices[prices.index >= DATA_START]
+    _state["etf_set"] = etf_set
+    _state["eval_start"] = pd.Timestamp(eval_start)
     _state["rf"] = pd.read_csv(rf_path, index_col=0, parse_dates=True).iloc[:, 0]
     _state["estimator"] = checked(load_estimator(estimator))
     _state["config"] = config
@@ -126,7 +141,7 @@ def evaluate(fund: dict, universe: str) -> dict:
     try:
         assets = [
             t
-            for t in universe_for(universe, fund["legacy_universe"], prices)
+            for t in universe_for(universe, fund["legacy_universe"], prices, _state["etf_set"])
             if t in prices and t != ticker
         ]
         fund_prices = prices[ticker].dropna()
@@ -141,7 +156,7 @@ def evaluate(fund: dict, universe: str) -> dict:
         fund_returns = daily_returns(fund_prices)
         etf_returns = daily_returns(prices[assets].ffill().reindex(fund_prices.index))
         rf_daily = compounded_rate(rf, fund_prices.index).reindex(fund_returns.index)
-        start = max(EVAL_START, fund_prices.index[0] + WARMUP)
+        start = max(_state["eval_start"], fund_prices.index[0] + WARMUP)
         result = walk_forward(
             fund_returns, etf_returns, rf_daily, _state["config"], _state["estimator"]
         )
@@ -216,6 +231,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--universe", default="all", help='"all", "legacy", "traded-by:DATE" or a comma list'
     )
+    parser.add_argument(
+        "--etf-set", type=str.upper, choices=list(etfs.SETS), default=etfs.DEFAULT_SET
+    )
+    parser.add_argument(
+        "--eval-start", default=EVAL_START, help="first date scored (default 2010-01-04)"
+    )
     parser.add_argument("--estimator", help="path/to/file.py:function")
     parser.add_argument("--window", type=int, default=252)
     parser.add_argument("--rebalance", choices=["M", "Q"], default="M")
@@ -251,7 +272,15 @@ def main(argv: list[str] | None = None) -> None:
     )
     load_estimator(args.estimator)  # a bad path fails here, not in every worker
     records = funds.to_dict("records")
-    initargs = (args.prices, args.rf, args.estimator, config, not args.raw)
+    initargs = (
+        args.prices,
+        args.rf,
+        args.estimator,
+        config,
+        not args.raw,
+        args.etf_set,
+        args.eval_start,
+    )
     with ProcessPoolExecutor(args.jobs, initializer=_init, initargs=initargs) as pool:
         rows = list(pool.map(evaluate, records, [args.universe] * len(records)))
     results = pd.DataFrame(rows)

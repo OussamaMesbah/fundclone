@@ -25,6 +25,7 @@ from fundclone.data import (
     fetch_info,
     fetch_prices,
     load_french_factors,
+    yahoo_symbols,
 )
 from fundclone.factsheet import parse_factsheet_safely
 from fundclone.portfolio import is_ticker, parse_portfolio, whole_shares
@@ -58,6 +59,7 @@ DEFAULTS = {
     "start": "2005-01-01",
     "end": TODAY.isoformat(),
     "max_etfs": None,
+    "etf_set": etfs.DEFAULT_SET,
     "asset_classes": tuple(etfs.ASSET_CLASSES),
     "window": 378,
     "rebalance": "M",
@@ -93,7 +95,7 @@ def plain(text) -> str:
 
 METHOD = f"""
 **The clone.** At the end of every month FundClone looks at the fund's daily returns
-over the past 18 months and finds the long-only mix of {len(etfs.ETFS)} liquid US-listed
+over the past 18 months and finds the long-only mix of {len(etfs.tickers())} liquid US-listed
 ETFs (size and style, sectors, industries, factors, regions, bonds, gold, commodities)
 that would have followed it most closely. Recent days count more (a 63-day half-life),
 weights the data cannot tell apart stay close to last month's, and positions below 2%
@@ -137,7 +139,7 @@ FundClone applies the three returns-based thresholds of an ESMA working paper on
 closet index funds ([Danieli, Harris and Pichini, 2020]({ESMA_PAPER})): tracking error
 below 3%, R² above 95% and beta between 0.95 and 1.05. The paper states its authors'
 views, not an official ESMA test. It measured the thresholds against each fund's own
-benchmark; FundClone uses the ETF, out of its {len(etfs.ETFS)}, that tracked the fund most
+benchmark; FundClone uses the ETF, out of its {len(etfs.tickers())}, that tracked the fund most
 closely. Where one of them follows the fund's benchmark, that makes the thresholds easier
 to meet. Where none does, as for total international or all-world indices, it can make
 them harder, so failing the screen does not clear a fund. An active fund that meets all
@@ -153,6 +155,13 @@ trades with what the fund reports.
 **Factor exposures.** A second, academic view regresses the fund's monthly excess returns
 on the Fama-French five factors and momentum, with term and credit factors for funds
 that hold bonds, and splits the average return into factor contributions and alpha.
+
+**UCITS ETFs.** Investors in the EU can build the clone from 47 UCITS ETFs and a gold ETC
+on Xetra instead, with ISINs and total expense ratios from justETF. Their euro prices are
+converted to USD, and a few known errors in Yahoo's Xetra prices are left out. They suit
+funds priced in European hours. For funds priced in US hours, Xetra's close four and a
+half hours earlier adds timing noise to the weekly figures, so the US-listed ETFs give the
+truer picture there.
 
 **Data.** Prices and fund expense ratios from Yahoo Finance; factors and the T-bill rate
 from the Kenneth French data library, which lags by one to two months. ETF expense
@@ -209,6 +218,7 @@ def prices_cached(tickers: list[str], start: str, end: str) -> pd.DataFrame:
 DAY = dt.timedelta(days=1)
 factors_cached = st.cache_data(ttl=DAY, max_entries=16, show_spinner=False)(load_french_factors)
 info_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(fetch_info)
+symbols_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(yahoo_symbols)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -218,6 +228,7 @@ def analyse(
     start,
     end,
     max_etfs,
+    etf_set,
     asset_classes,
     window,
     rebalance,
@@ -241,6 +252,7 @@ def analyse(
         end,
         replication=config,
         asset_classes=list(asset_classes),
+        etf_set=etf_set,
         frequency=frequency,
         region=region,
         use_bond_factors=bond_factors,
@@ -300,10 +312,11 @@ def _cap(text: str) -> int:
 
 
 def _blocks(text: str) -> tuple[str, ...]:
+    known = [name for etf_set in etfs.SETS for name in etfs.asset_classes(etf_set)]
     names = text.split(",")
-    if not names or any(name not in etfs.ASSET_CLASSES for name in names):
+    if not names or any(name not in known for name in names):
         raise ValueError(text)
-    return tuple(name for name in etfs.ASSET_CLASSES if name in names)
+    return tuple(name for name in known if name in names)
 
 
 def _cost(text: str) -> float:
@@ -324,6 +337,7 @@ LINK = {
     "start": ("start", _date),
     "end": ("end", _date),
     "etfs": ("max_etfs", _cap),
+    "set": ("etf_set", _choice(*etfs.SETS)),
     "blocks": ("asset_classes", _blocks),
     "window": ("window", _on_grid(*WINDOW)),
     "rebalance": ("rebalance", _choice(*REBALANCE.values())),
@@ -360,6 +374,9 @@ def params_from_link() -> dict:
                 params[setting] = parse(query[key])
             except ValueError:
                 pass
+    offered = etfs.asset_classes(params["etf_set"])
+    if not set(params["asset_classes"]) <= set(offered):
+        params["asset_classes"] = tuple(offered)
     return params
 
 
@@ -367,7 +384,10 @@ def update_link(params: dict) -> None:
     """Put the analysis in the URL: the target and every setting that differs from the default."""
     st.query_params.clear()
     st.query_params["ticker" if params["mode"] == "Fund" else "portfolio"] = params["target"]
+    every_group = tuple(etfs.asset_classes(params["etf_set"]))
     for key, (setting, _) in LINK.items():
+        if setting == "asset_classes" and params[setting] == every_group:
+            continue
         if params[setting] != DEFAULTS[setting]:
             st.query_params[key] = _link_text(params[setting])
 
@@ -378,6 +398,21 @@ def settings_form(initial: dict) -> dict | None:
         ["Fund", "Portfolio"],
         index=0 if initial["mode"] == "Fund" else 1,
         horizontal=True,
+    )
+    sets = list(etfs.SETS)
+    etf_set = (
+        st.radio(
+            "ETFs",
+            sets,
+            index=sets.index(initial["etf_set"]),
+            horizontal=True,
+            format_func=lambda name: "US-listed" if name == etfs.DEFAULT_SET else "UCITS (Xetra)",
+            help="US-listed ETFs, or UCITS ETFs on Xetra that investors in the EU can buy. "
+            "UCITS ETFs suit funds priced in European hours; for US funds their Xetra prices "
+            "add timing noise.",
+        )
+        if len(sets) > 1
+        else sets[0]
     )
     with st.form("settings", border=False):
         if mode == "Fund":
@@ -411,11 +446,13 @@ def settings_form(initial: dict) -> dict | None:
             index=choices.index(current),
             help="Automatic uses as many ETFs as help; a cap gives a simpler clone to hold.",
         )
+        offered = etfs.asset_classes(etf_set)
         classes = st.multiselect(
             "Building blocks",
-            etfs.ASSET_CLASSES,
-            default=list(initial["asset_classes"]),
-            help=f"{len(etfs.ETFS)} liquid US-listed ETFs in {len(etfs.ASSET_CLASSES)} groups.",
+            offered,
+            default=[name for name in initial["asset_classes"] if name in offered] or offered,
+            help=f"{len(etfs.tickers(etf_set=etf_set))} {etfs.SETS[etf_set]} in "
+            f"{len(offered)} groups.",
         )
         with st.expander("Advanced"):
             low, high, step = WINDOW
@@ -467,6 +504,7 @@ def settings_form(initial: dict) -> dict | None:
         "start": start.isoformat(),
         "end": end.isoformat(),
         "max_etfs": MAX_ETFS[max_etfs],
+        "etf_set": etf_set,
         "asset_classes": tuple(classes),
         "window": window,
         "rebalance": REBALANCE[rebalance],
@@ -479,8 +517,39 @@ def settings_form(initial: dict) -> dict | None:
     }
 
 
+def show_symbols(isin: str) -> None:
+    """The Yahoo Finance symbols listed for an ISIN, as candidates to check."""
+    try:
+        found = [quote for quote in symbols_cached(isin) if is_ticker(quote["symbol"])]
+    except ValueError:
+        st.caption(f"{plain(isin)} is not a valid ISIN.")
+        return
+    if not found:
+        st.caption(f"Yahoo Finance lists no symbol for {plain(isin)}.")
+        return
+    st.markdown(
+        "\n".join(
+            f"- `{quote['symbol']}` {plain(quote['name'])} "
+            f"({plain(quote['type'].lower() or 'unknown type')}, {plain(quote['exchange'])})"
+            for quote in found
+        )
+    )
+    st.caption(
+        f"Yahoo Finance symbols for {plain(isin)}. Check the name and share class before "
+        "using one: Yahoo's search can list another class of the same fund."
+    )
+
+
 def factsheet_lookup() -> None:
-    with st.expander("Find a ticker from a factsheet"):
+    with st.expander("Find a ticker from an ISIN or a factsheet"):
+        isin = st.text_input(
+            "ISIN",
+            placeholder="e.g. DE0009848119",
+            help="Many European funds are on Yahoo Finance under symbols such as 0P0000RU81.L; "
+            "their ISIN finds them.",
+        )
+        if isin.strip():
+            show_symbols(isin.strip().upper())
         upload = st.file_uploader("Factsheet PDF", type="pdf")
         st.caption(
             "Pulls the fund name, ISINs and ticker candidates out of the first pages of a PDF. "
@@ -498,6 +567,8 @@ def factsheet_lookup() -> None:
         st.markdown(f"**{plain(info['fund_name'] or 'Unknown fund')}**")
         st.markdown(f"Ticker candidates: {plain(candidates)}")
         st.markdown(f"ISINs: {plain(', '.join(info['isins']) or 'none found')}")
+        for found_isin in info["isins"][:2]:  # a factsheet lists a few share classes at most
+            show_symbols(found_isin)
 
 
 def orders(allocation: pd.DataFrame, prices: pd.Series, amount: float) -> pd.DataFrame:
