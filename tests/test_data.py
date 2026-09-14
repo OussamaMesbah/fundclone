@@ -1,4 +1,5 @@
 import json
+import logging
 from types import SimpleNamespace
 
 import numpy as np
@@ -158,6 +159,7 @@ def test_damaged_info_cache_is_fetched_again(tmp_path, monkeypatch):
         "exchangeTimezoneName": "America/New_York",
         "quoteType": "MUTUALFUND",
         "netExpenseRatio": 0.59,
+        "annualHoldingsTurnover": 0.32,
     }
     monkeypatch.setattr(data.yf, "Ticker", lambda ticker: SimpleNamespace(info=raw, fast_info={}))
     info = data.fetch_info("AAA")
@@ -167,8 +169,20 @@ def test_damaged_info_cache_is_fetched_again(tmp_path, monkeypatch):
         "timezone": "America/New_York",
         "quote_type": "MUTUALFUND",
         "expense_ratio": pytest.approx(0.0059),
+        "turnover": pytest.approx(0.32),
     }
     assert json.loads(path.read_text())["name"] == "AAA Fund"
+
+
+def test_a_cache_written_before_a_field_existed_is_fetched_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    path = data._cache_file("info", "AAA", ".json")
+    path.parent.mkdir(parents=True)
+    old = {"name": "AAA Fund", "currency": "USD", "timezone": None, "quote_type": "MUTUALFUND"}
+    path.write_text(json.dumps(old | {"expense_ratio": 0.0059}))  # no "turnover" yet
+    raw = {"longName": "AAA Fund", "annualHoldingsTurnover": 0.32}
+    monkeypatch.setattr(data.yf, "Ticker", lambda ticker: SimpleNamespace(info=raw, fast_info={}))
+    assert data.fetch_info("AAA")["turnover"] == pytest.approx(0.32)
 
 
 def market_moves(n: int, seed: int) -> tuple[pd.DatetimeIndex, np.ndarray, pd.DataFrame]:
@@ -248,3 +262,85 @@ def test_interest_is_compounded_over_gaps_and_carried_forward():
     assert rf.iloc[1] == pytest.approx(1.001**3 - 1)  # 3, 4 and 5 January
     assert rf.iloc[2] == pytest.approx(0.001)  # a Monday after a Friday
     assert rf.iloc[3] == pytest.approx(1.001**5 - 1)  # 9 to 15 January, from the 11th assumed
+
+
+RATE_LIMIT_LOG = "['AAA']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')"
+
+
+def closes_frame(tickers):
+    """What yf.download returns: columns (price field, ticker)."""
+    closes = pd.DataFrame({ticker: [1.0, 2.0, 3.0] for ticker in tickers}, index=DATES[:3])
+    return pd.concat({"Close": closes}, axis=1)
+
+
+def test_a_rate_limit_is_waited_out_and_the_download_repeated(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    attempts, waits = [], []
+
+    def download(tickers, **kwargs):
+        attempts.append(tickers)
+        if len(attempts) == 1:  # yfinance logs the limit instead of raising it
+            logging.getLogger("yfinance").error(RATE_LIMIT_LOG)
+            return pd.DataFrame()
+        return closes_frame(tickers)
+
+    monkeypatch.setattr(data.yf, "download", download)
+    monkeypatch.setattr(data.time, "sleep", waits.append)
+    prices = data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")
+    assert prices["AAA"].tolist() == [1.0, 2.0, 3.0]
+    assert waits == [data.RATE_LIMIT_WAITS[0]]
+    assert "notes" not in prices.attrs
+
+
+def test_a_lasting_rate_limit_says_so_instead_of_returning_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    waits = []
+
+    def download(tickers, **kwargs):
+        logging.getLogger("yfinance").error(RATE_LIMIT_LOG)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(data.yf, "download", download)
+    monkeypatch.setattr(data.time, "sleep", waits.append)
+    with pytest.raises(data.YahooRateLimitError, match="no prices for AAA. Try again"):
+        data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")
+    assert waits == list(data.RATE_LIMIT_WAITS)
+
+
+def test_during_a_rate_limit_earlier_prices_are_used_with_a_note(cache, monkeypatch):
+    data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")  # fills the cache
+    monkeypatch.setattr(data, "PRICE_MAX_AGE", -1)  # everything is stale now
+
+    def limited(tickers):
+        raise data.YahooRateLimitError()
+
+    monkeypatch.setattr(data, "_download_closes", limited)
+    prices = data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")
+    assert prices["AAA"].tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
+    assert "limiting requests" in prices.attrs["notes"][0]
+
+
+def test_yahoo_symbols_for_an_isin(monkeypatch):
+    quotes = [
+        {
+            "symbol": "HJUA.F",
+            "longname": "DWS Top Dividende",
+            "quoteType": "ETF",
+            "exchDisp": "Frankfurt",
+        },
+        {"longname": "without a symbol"},
+    ]
+    monkeypatch.setattr(data.yf, "Search", lambda isin, max_results: SimpleNamespace(quotes=quotes))
+    assert data.yahoo_symbols("DE0009848119") == [
+        {"symbol": "HJUA.F", "name": "DWS Top Dividende", "type": "ETF", "exchange": "Frankfurt"}
+    ]
+    with pytest.raises(ValueError, match="not a valid ISIN"):
+        data.yahoo_symbols("DE0009848118")  # wrong check digit
+
+
+def test_yahoo_symbols_is_empty_when_the_search_fails(monkeypatch):
+    def failing(isin, max_results):
+        raise RuntimeError("rate limited")
+
+    monkeypatch.setattr(data.yf, "Search", failing)
+    assert data.yahoo_symbols("DE0009848119") == []

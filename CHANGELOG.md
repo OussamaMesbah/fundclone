@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## 0.5.0 (2026-09-14)
+
+Answers to the points a critical reader would raise, and UCITS building blocks for
+investors in the EU. How clones are estimated is unchanged, so the benchmark results of
+0.3.0 still hold; the verdict's 95% ranges now allow for gaps that carry over from week to
+week.
+
+### Added
+- UCITS building blocks for investors in the EU: 47 UCITS ETFs and a gold ETC on Xetra with
+  ISINs and total expense ratios, chosen as the ETF set in the app (`?set=UCITS`), on the
+  command line (`--etf-set UCITS`) and in the benchmark. Their euro prices are converted
+  to USD, and known errors in Yahoo's Xetra prices are left out. The analysis points to
+  them for funds priced in European hours and warns that their Xetra prices add timing
+  noise for funds priced in US hours.
+- A lookup that lists the Yahoo Finance symbols for an ISIN, also for the ISINs found in a
+  factsheet, as candidates to check.
+- The benchmark can start scoring at a later date (`--eval-start`) and runs on either ETF
+  set.
+- The verdict also sets the fund against the closest single ETF, with a 95% range: how
+  much the fund returned beyond one simple ETF.
+- What switching costs: a warning for share classes whose name implies a sales load, the
+  tax on gains realised by selling the fund, how long the lower fees take to earn it back,
+  and the clone's trading against the turnover the fund reports.
+- [docs/method.md](docs/method.md): every step of the method with its parameters, formulas
+  and references.
+- When Yahoo Finance limits requests, the download waits and tries twice more. If the limit
+  lasts, earlier prices are used with a note, or the app and the command line say that
+  Yahoo is limiting requests instead of reporting missing data.
+- The benchmark reports a bootstrap range for its median tracking error, and can limit the
+  ETFs to those already trading at a date (`--universe traded-by:2009-01-02`). Limited to
+  the 68 ETFs that traded by January 2009, the median over all 64 funds stays at 2.91%.
+
+### Changed
+- The 95% range of the fund-minus-clone gap uses a Newey-West standard error, so it
+  widens when a gap tends to carry over from one week to the next.
+- The whole-share orders and the CSV sit in an "Illustrative orders" section of their own,
+  marked as an illustration rather than a recommendation.
+- The README and the app's Method tab credit returns-based style analysis (Sharpe, 1992),
+  on which the clone builds, and say what FundClone adds to it: monthly refits from past
+  data only, ETFs you can buy, and out-of-sample measurement after trading costs.
+
 ## 0.4.0 (2026-09-11)
 
 Security hardening and a setup for outside contributors. How clones are estimated and

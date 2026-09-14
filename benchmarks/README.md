@@ -58,6 +58,12 @@ Fresh set, 23 funds, run once:
 | **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **1.30** | **7.8** |
 | FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 1.54 | 4.6 |
 
+With this few funds the medians are uncertain. A bootstrap over the funds (10,000 draws,
+printed by `benchmarks.run`) puts the fresh median of 0.3 at 2.29% to 3.19% (95%) and the
+one before 0.3 at 3.09% to 4.37%. The two ranges overlap; fund by fund, though, 0.3 tracks
+more closely on 22 of the 23 funds, by 0.54 percentage points in the median (95% range
+0.25 to 1.31).
+
 Holdout half of the development set, 20 funds:
 
 | Version | Median tracking error | Mean tracking error | Median R² | Turnover | ETFs |
@@ -155,6 +161,54 @@ are three broad US index funds, where four ETFs already do a near-perfect job: V
 | ARKK | Sector | dev | 27.33% | 21.26% | 0.736 | 4.1 | 2.39 |
 | BRK-B | Single stock | holdout | 11.80% | 10.75% | 0.645 | 7.0 | 2.62 |
 
+## Is the list of ETFs chosen with hindsight?
+
+The 81 ETFs were picked in 2026 from those that are liquid today, a list nobody could have
+known in 2010. A clone never uses an ETF's prices before the ETF existed: an ETF joins only
+once it has a full estimation window. But the list leaves out ETFs that have closed since
+and favours those that became popular. As a check, the benchmark was rerun with only the
+68 ETFs that already traded on 2 January 2009, a year before scoring starts
+(`--universe traded-by:2009-01-02`). The 13 dropped are XLRE, XLC, MTUM, QUAL, USMV,
+VLUE, INDA, VCSH, VCIT, FLOT, BKLN, CWB and BNDX. On a snapshot of 14 September 2026,
+which reproduces the published medians:
+
+| ETFs | Median tracking error, 64 funds | Mean tracking error | Fresh set median |
+|---|---|---|---|
+| All 81 | 2.91% | 3.30% | 2.89% |
+| The 68 that traded by January 2009 | 2.91% | 3.33% | 2.88% |
+
+Fund by fund, the tracking error rises by 0.01 percentage points in the median (95% range
+0.00 to 0.03). The largest change is Fidelity Contrafund's, from 2.97% to 3.29%. Choosing
+the ETFs with hindsight therefore barely flatters the results. ETFs that have closed
+cannot be tested, because Yahoo Finance no longer has their prices.
+
+## UCITS ETFs and funds priced in US hours
+
+FundClone also offers 47 UCITS ETFs on Xetra, for investors in the EU (`--etf-set UCITS`).
+Their prices are set when Xetra closes, four and a half hours before US funds are priced,
+and converted to USD with an exchange rate taken at yet another time. For US funds that
+adds noise that has nothing to do with how well the ETFs match the fund: the S&P 500 UCITS
+ETF SXR8, converted to USD, differs from SPY by 7.8% a year on weekly returns and 4.0% on
+monthly returns since 2018. Its daily return correlates 0.50 with SPY's on the same day and
+0.32 with SPY's on the day before.
+
+All 64 funds, scored from January 2018 (when most UCITS sector ETFs have a full estimation
+window), fitted on weekly returns:
+
+| Building blocks | Median weekly tracking error | Median monthly tracking error | Median R² |
+|---|---|---|---|
+| 81 US-listed ETFs | 3.24% | 3.11% | 0.959 |
+| 47 UCITS ETFs on Xetra | 8.54% | 5.11% | 0.763 |
+
+UCITS ETFs track less closely on every one of the 64 funds, by 4.96 percentage points in
+the median. The index funds show that it is timing: with UCITS ETFs on the same indices,
+their median weekly tracking error is 8.61% against 1.12%. For funds priced in European
+hours the timing works the other way. Fundsmith Equity, a London fund, is cloned with
+9.3% weekly tracking error and an R² of 0.64 from UCITS ETFs, against 10.9% and 0.50
+from US-listed ETFs; it holds about 25 stocks, so neither set gets close. The analysis
+therefore points to the UCITS ETFs for funds priced in European hours and warns when they
+are chosen for a fund priced in US hours.
+
 ## Why tracking error does not go much lower
 
 **Daily prices are noisy.** SPY and IVV, two ETFs that hold the same S&P 500 stocks,
@@ -229,6 +283,9 @@ python -m benchmarks.run --split dev,holdout --window 378 --estimator product   
 python -m benchmarks.run --split all --window 378 --estimator product --max-etfs 5
 python -m benchmarks.run --split all                                             # least squares, 81 ETFs
 python -m benchmarks.run --split all --universe legacy --raw                     # the baseline
+python -m benchmarks.run --split all --window 378 --estimator product --universe traded-by:2009-01-02
+python -m benchmarks.run --split all --window 378 --estimator product --eval-start 2018-01-02 --frequency weekly
+python -m benchmarks.run --split all --window 378 --estimator product --eval-start 2018-01-02 --frequency weekly --etf-set UCITS
 ```
 
 Add `--out results.csv` to keep the per-fund rows. Yahoo revises its history now and

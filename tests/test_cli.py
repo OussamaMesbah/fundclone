@@ -57,3 +57,17 @@ def test_the_report_prints(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "A clone of" in out
     assert "Factor exposures" in out
+
+
+def test_asset_classes_are_those_of_the_chosen_etf_set():
+    import argparse
+
+    from fundclone.cli import _asset_classes
+
+    parser = argparse.ArgumentParser()
+    assert _asset_classes(parser, "world equity, eur bonds", "UCITS") == [
+        "World equity",
+        "EUR bonds",
+    ]
+    with pytest.raises(SystemExit):
+        _asset_classes(parser, "US equity", "UCITS")

@@ -109,3 +109,35 @@ def test_factsheet_details_are_shown_as_plain_text(app, monkeypatch):
     assert not app.exception
     shown = [m.value.replace("\\", "") for m in app.markdown if "evil" in m.value]
     assert shown and all("https://" not in text and "www." not in text for text in shown)
+
+
+def test_switching_shows_the_tax_and_how_long_it_takes_to_earn_it_back(app):
+    app.query_params["ticker"] = "FUND"  # the synthetic fund with an expense ratio
+    app.run()
+    widget(app.number_input, "Unrealised gain, % of the amount").set_value(40.0).run()
+    assert not app.exception
+    captions = [element.value for element in app.caption]
+    assert any("600 USD in tax" in text for text in captions)
+    assert any("years to earn back" in text for text in captions)
+    assert any("trades about" in text and "the 35% the fund reports" in text for text in captions)
+
+
+def test_an_isin_shows_yahoo_symbols_to_choose_from(app, monkeypatch):
+    found = [{"symbol": "HJUA.F", "name": "DWS Top Dividende", "type": "ETF", "exchange": "FRA"}]
+    monkeypatch.setattr(data, "yahoo_symbols", lambda isin, limit=5: found)
+    app.run()
+    widget(app.text_input, "ISIN").set_value("de0009848119").run()
+    assert not app.exception
+    assert any("HJUA.F" in element.value for element in app.markdown)
+    assert any("share class" in element.value for element in app.caption)
+
+
+def test_a_link_can_choose_the_ucits_etfs(app):
+    app.query_params["ticker"] = "FUND"
+    app.query_params["set"] = "UCITS"
+    app.run()
+    assert not app.exception
+    assert widget(app.radio, "ETFs").value == "UCITS"
+    blocks = widget(app.multiselect, "Building blocks")
+    assert "World equity" in blocks.value and "US equity" not in blocks.value
+    assert any("timing noise" in element.value for element in app.caption)

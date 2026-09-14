@@ -18,7 +18,15 @@ import streamlit as st
 from fundclone import charts, etfs
 from fundclone.analysis import Analysis, run_analysis
 from fundclone.attribution import FACTOR_DESCRIPTIONS, FACTOR_NAMES
-from fundclone.data import REGIONS, fetch_info, fetch_prices, load_french_factors
+from fundclone.costs import load_drag, switching
+from fundclone.data import (
+    REGIONS,
+    YahooRateLimitError,
+    fetch_info,
+    fetch_prices,
+    load_french_factors,
+    yahoo_symbols,
+)
 from fundclone.factsheet import parse_factsheet_safely
 from fundclone.portfolio import is_ticker, parse_portfolio, whole_shares
 from fundclone.replication import ReplicationConfig
@@ -51,6 +59,7 @@ DEFAULTS = {
     "start": "2005-01-01",
     "end": TODAY.isoformat(),
     "max_etfs": None,
+    "etf_set": etfs.DEFAULT_SET,
     "asset_classes": tuple(etfs.ASSET_CLASSES),
     "window": 378,
     "rebalance": "M",
@@ -71,6 +80,7 @@ DISCLAIMER = (
 ESMA_PAPER = (
     "https://www.esma.europa.eu/sites/default/files/library/esmawp-2020-2_closet_indexing.pdf"
 )
+SHARPE_PAPER = "https://web.stanford.edu/~wfsharpe/art/sa/sa.htm"
 _MARKDOWN = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$:])")
 _AUTOLINK = re.compile(r"(?i)(https?|www)(?=[:.])|(@)")
 
@@ -85,7 +95,7 @@ def plain(text) -> str:
 
 METHOD = f"""
 **The clone.** At the end of every month FundClone looks at the fund's daily returns
-over the past 18 months and finds the long-only mix of {len(etfs.ETFS)} liquid US-listed
+over the past 18 months and finds the long-only mix of {len(etfs.tickers())} liquid US-listed
 ETFs (size and style, sectors, industries, factors, regions, bonds, gold, commodities)
 that would have followed it most closely. Recent days count more (a 63-day half-life),
 weights the data cannot tell apart stay close to last month's, and positions below 2%
@@ -96,6 +106,12 @@ estimator came out of an out-of-sample comparison of seven approaches on 41 fund
 median tracking errors differed by at most 0.15 percentage points; compared with plain
 least squares it trades about half as much for about the same tracking error (see the
 benchmark in the repository).
+
+**Where it comes from.** The clone is returns-based style analysis
+([Sharpe, 1992]({SHARPE_PAPER})), which explains a fund's returns by a long-only mix of
+asset-class returns. Sharpe fitted the mix once, over the whole history, to describe a
+fund's style. FundClone refits it every month from past data only, on ETFs you can buy,
+so the clone is one you could have held in real time.
 
 **Out of sample, always.** The clone's weights on any day come only from data before
 that day. Tracking error, R² and the fund-minus-clone return are measured on these
@@ -112,23 +128,40 @@ data errors, and unadjusted splits are corrected.
 its expense ratio, the ETFs' prices net of theirs, and the clone pays trading costs on
 top. The gap is the difference in compound annual growth. If its 95% range lies above
 zero, the manager added something cheap ETFs could not. A range that straddles zero
-means the difference is within the noise.
+means the difference is within the noise. The range uses a Newey-West standard error,
+which widens it when a gap tends to carry over from one week to the next. The verdict
+also sets the fund against the closest single ETF, the simplest alternative to it. That
+ETF is picked with hindsight, as the one that tracked best, which flatters the ETF rather
+than the fund.
 
 **Closet index screen.** For equity funds with a year or more of out-of-sample returns,
 FundClone applies the three returns-based thresholds of an ESMA working paper on potential
 closet index funds ([Danieli, Harris and Pichini, 2020]({ESMA_PAPER})): tracking error
 below 3%, R² above 95% and beta between 0.95 and 1.05. The paper states its authors'
 views, not an official ESMA test. It measured the thresholds against each fund's own
-benchmark; FundClone uses the ETF, out of its {len(etfs.ETFS)}, that tracked the fund most
+benchmark; FundClone uses the ETF, out of its {len(etfs.tickers())}, that tracked the fund most
 closely. Where one of them follows the fund's benchmark, that makes the thresholds easier
 to meet. Where none does, as for total international or all-world indices, it can make
 them harder, so failing the screen does not clear a fund. An active fund that meets all
 three is a candidate for a closer look, not proof of anything; for an index fund it is
 expected.
 
+**What the figures leave out.** The fund's returns follow its net asset value: after its
+expense ratio, but before any sales load and before tax. Where a share class name implies
+a load, the verdict says so. Under the clone, "Switching from the fund" turns a load, the
+gains you would realise and your tax rate into numbers, and compares how much the clone
+trades with what the fund reports.
+
 **Factor exposures.** A second, academic view regresses the fund's monthly excess returns
 on the Fama-French five factors and momentum, with term and credit factors for funds
 that hold bonds, and splits the average return into factor contributions and alpha.
+
+**UCITS ETFs.** Investors in the EU can build the clone from 47 UCITS ETFs and a gold ETC
+on Xetra instead, with ISINs and total expense ratios from justETF. Their euro prices are
+converted to USD, and a few known errors in Yahoo's Xetra prices are left out. They suit
+funds priced in European hours. For funds priced in US hours, Xetra's close four and a
+half hours earlier adds timing noise to the weekly figures, so the US-listed ETFs give the
+truer picture there.
 
 **Data.** Prices and fund expense ratios from Yahoo Finance; factors and the T-bill rate
 from the Kenneth French data library, which lags by one to two months. ETF expense
@@ -162,16 +195,22 @@ def prices_cached(tickers: list[str], start: str, end: str) -> pd.DataFrame:
     """Prices from Yahoo Finance, cached; tickers Yahoo does not answer for come from the
     snapshot, with a note for the analysis to show."""
     tickers = list(dict.fromkeys(tickers))  # run_analysis may ask for a ticker twice
-    live = live_prices(tickers, start, end)
     stored = snapshot()
+    try:
+        live = live_prices(tickers, start, end)
+    except YahooRateLimitError:  # not cached, so the next try asks Yahoo again
+        if stored.empty:
+            raise
+        live = pd.DataFrame()
     fill = [ticker for ticker in tickers if ticker not in live and ticker in stored]
     if not fill:
         return live
     period = (stored.index >= pd.Timestamp(start)) & (stored.index < pd.Timestamp(end))
     prices = pd.concat([live, stored.loc[period, fill]], axis=1).sort_index()
     prices.attrs["notes"] = [
+        *live.attrs.get("notes", []),
         f"Yahoo Finance did not answer for {', '.join(fill)}, so their prices come from the "
-        f"local price snapshot of {stored.index[-1]:%Y-%m-%d}."
+        f"local price snapshot of {stored.index[-1]:%Y-%m-%d}.",
     ]
     return prices
 
@@ -179,6 +218,7 @@ def prices_cached(tickers: list[str], start: str, end: str) -> pd.DataFrame:
 DAY = dt.timedelta(days=1)
 factors_cached = st.cache_data(ttl=DAY, max_entries=16, show_spinner=False)(load_french_factors)
 info_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(fetch_info)
+symbols_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(yahoo_symbols)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -188,6 +228,7 @@ def analyse(
     start,
     end,
     max_etfs,
+    etf_set,
     asset_classes,
     window,
     rebalance,
@@ -211,6 +252,7 @@ def analyse(
         end,
         replication=config,
         asset_classes=list(asset_classes),
+        etf_set=etf_set,
         frequency=frequency,
         region=region,
         use_bond_factors=bond_factors,
@@ -270,10 +312,11 @@ def _cap(text: str) -> int:
 
 
 def _blocks(text: str) -> tuple[str, ...]:
+    known = [name for etf_set in etfs.SETS for name in etfs.asset_classes(etf_set)]
     names = text.split(",")
-    if not names or any(name not in etfs.ASSET_CLASSES for name in names):
+    if not names or any(name not in known for name in names):
         raise ValueError(text)
-    return tuple(name for name in etfs.ASSET_CLASSES if name in names)
+    return tuple(name for name in known if name in names)
 
 
 def _cost(text: str) -> float:
@@ -294,6 +337,7 @@ LINK = {
     "start": ("start", _date),
     "end": ("end", _date),
     "etfs": ("max_etfs", _cap),
+    "set": ("etf_set", _choice(*etfs.SETS)),
     "blocks": ("asset_classes", _blocks),
     "window": ("window", _on_grid(*WINDOW)),
     "rebalance": ("rebalance", _choice(*REBALANCE.values())),
@@ -330,6 +374,9 @@ def params_from_link() -> dict:
                 params[setting] = parse(query[key])
             except ValueError:
                 pass
+    offered = etfs.asset_classes(params["etf_set"])
+    if not set(params["asset_classes"]) <= set(offered):
+        params["asset_classes"] = tuple(offered)
     return params
 
 
@@ -337,7 +384,10 @@ def update_link(params: dict) -> None:
     """Put the analysis in the URL: the target and every setting that differs from the default."""
     st.query_params.clear()
     st.query_params["ticker" if params["mode"] == "Fund" else "portfolio"] = params["target"]
+    every_group = tuple(etfs.asset_classes(params["etf_set"]))
     for key, (setting, _) in LINK.items():
+        if setting == "asset_classes" and params[setting] == every_group:
+            continue
         if params[setting] != DEFAULTS[setting]:
             st.query_params[key] = _link_text(params[setting])
 
@@ -348,6 +398,21 @@ def settings_form(initial: dict) -> dict | None:
         ["Fund", "Portfolio"],
         index=0 if initial["mode"] == "Fund" else 1,
         horizontal=True,
+    )
+    sets = list(etfs.SETS)
+    etf_set = (
+        st.radio(
+            "ETFs",
+            sets,
+            index=sets.index(initial["etf_set"]),
+            horizontal=True,
+            format_func=lambda name: "US-listed" if name == etfs.DEFAULT_SET else "UCITS (Xetra)",
+            help="US-listed ETFs, or UCITS ETFs on Xetra that investors in the EU can buy. "
+            "UCITS ETFs suit funds priced in European hours; for US funds their Xetra prices "
+            "add timing noise.",
+        )
+        if len(sets) > 1
+        else sets[0]
     )
     with st.form("settings", border=False):
         if mode == "Fund":
@@ -381,11 +446,13 @@ def settings_form(initial: dict) -> dict | None:
             index=choices.index(current),
             help="Automatic uses as many ETFs as help; a cap gives a simpler clone to hold.",
         )
+        offered = etfs.asset_classes(etf_set)
         classes = st.multiselect(
             "Building blocks",
-            etfs.ASSET_CLASSES,
-            default=list(initial["asset_classes"]),
-            help=f"{len(etfs.ETFS)} liquid US-listed ETFs in {len(etfs.ASSET_CLASSES)} groups.",
+            offered,
+            default=[name for name in initial["asset_classes"] if name in offered] or offered,
+            help=f"{len(etfs.tickers(etf_set=etf_set))} {etfs.SETS[etf_set]} in "
+            f"{len(offered)} groups.",
         )
         with st.expander("Advanced"):
             low, high, step = WINDOW
@@ -437,6 +504,7 @@ def settings_form(initial: dict) -> dict | None:
         "start": start.isoformat(),
         "end": end.isoformat(),
         "max_etfs": MAX_ETFS[max_etfs],
+        "etf_set": etf_set,
         "asset_classes": tuple(classes),
         "window": window,
         "rebalance": REBALANCE[rebalance],
@@ -449,8 +517,39 @@ def settings_form(initial: dict) -> dict | None:
     }
 
 
+def show_symbols(isin: str) -> None:
+    """The Yahoo Finance symbols listed for an ISIN, as candidates to check."""
+    try:
+        found = [quote for quote in symbols_cached(isin) if is_ticker(quote["symbol"])]
+    except ValueError:
+        st.caption(f"{plain(isin)} is not a valid ISIN.")
+        return
+    if not found:
+        st.caption(f"Yahoo Finance lists no symbol for {plain(isin)}.")
+        return
+    st.markdown(
+        "\n".join(
+            f"- `{quote['symbol']}` {plain(quote['name'])} "
+            f"({plain(quote['type'].lower() or 'unknown type')}, {plain(quote['exchange'])})"
+            for quote in found
+        )
+    )
+    st.caption(
+        f"Yahoo Finance symbols for {plain(isin)}. Check the name and share class before "
+        "using one: Yahoo's search can list another class of the same fund."
+    )
+
+
 def factsheet_lookup() -> None:
-    with st.expander("Find a ticker from a factsheet"):
+    with st.expander("Find a ticker from an ISIN or a factsheet"):
+        isin = st.text_input(
+            "ISIN",
+            placeholder="e.g. DE0009848119",
+            help="Many European funds are on Yahoo Finance under symbols such as 0P0000RU81.L; "
+            "their ISIN finds them.",
+        )
+        if isin.strip():
+            show_symbols(isin.strip().upper())
         upload = st.file_uploader("Factsheet PDF", type="pdf")
         st.caption(
             "Pulls the fund name, ISINs and ticker candidates out of the first pages of a PDF. "
@@ -468,6 +567,8 @@ def factsheet_lookup() -> None:
         st.markdown(f"**{plain(info['fund_name'] or 'Unknown fund')}**")
         st.markdown(f"Ticker candidates: {plain(candidates)}")
         st.markdown(f"ISINs: {plain(', '.join(info['isins']) or 'none found')}")
+        for found_isin in info["isins"][:2]:  # a factsheet lists a few share classes at most
+            show_symbols(found_isin)
 
 
 def orders(allocation: pd.DataFrame, prices: pd.Series, amount: float) -> pd.DataFrame:
@@ -594,25 +695,79 @@ def render_verdict(a: Analysis) -> None:
         st.caption(plain(note))
 
 
-def render_clone(a: Analysis, params: dict, mode: str) -> None:
-    rep = a.replication
-    cfg = rep.config
-    allocation = a.allocation()
-    left, right = st.columns([3, 2], gap="large")
-    with left:
-        st.markdown(f"**The clone today**, traded {rep.weights.index[-1]:%d %b %Y}")
-        show_table(allocation, {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
-        st.caption(
-            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on "
-            f"{cfg.frequency} returns of the past {cfg.window} trading days. "
-            f"Turnover {rep.annual_turnover:.1f}× a year at {cfg.cost_bps:g} bp per trade."
+def render_switching(a: Analysis, amount: float, years: int) -> None:
+    """What leaving the fund for the clone costs: its sales load, the tax on realised gains
+    and the trading the clone does from then on."""
+    with st.expander("Switching from the fund: load, tax and trading"):
+        # one below the other: the column is too narrow for three inputs side by side
+        load = (
+            st.number_input(
+                "Sales load paid, %",
+                0.0,
+                10.0,
+                0.0,
+                step=0.25,
+                help="A front-end load is not in the fund's returns here, which follow its net "
+                "asset value. Class A shares of stock funds often charge up to 5.75%.",
+            )
+            / 100
         )
-    with right:
-        st.markdown("**Build it**")
-        st.caption("An illustration at the latest prices, not a recommendation to trade.")
-        amount_col, years_col = st.columns([3, 2])
-        amount = amount_col.number_input("Amount, USD", 1_000, 10_000_000, 10_000, step=1_000)
-        years = years_col.number_input("Years", 1, 40, 10)
+        gain = (
+            st.number_input(
+                "Unrealised gain, % of the amount",
+                0.0,
+                100.0,
+                0.0,
+                step=5.0,
+                help="Gains you would realise by selling the fund in a taxable account. In a "
+                "401(k), an IRA or another tax-deferred account, switching costs no tax.",
+            )
+            / 100
+        )
+        rate = st.number_input("Tax rate on gains, %", 0.0, 60.0, 15.0, step=1.0) / 100
+
+        if load > 0:
+            st.caption(
+                f"A {load:.2%} sales load on {amount:,.0f} USD costs {amount * load:,.0f} USD up "
+                f"front, as much as {load_drag(load, years):.2%} a year over {years} years."
+            )
+        saved = a.expense_ratio + load_drag(load, years) - a.clone_expense_ratio
+        result = switching(amount, gain, rate, saved)
+        if result["tax"] > 0:
+            lines = [
+                f"Selling the fund would realise {amount * gain:,.0f} USD of gains and cost about "
+                f"{result['tax']:,.0f} USD in tax."
+            ]
+            if saved > 0:
+                lines.append(
+                    f"The clone saves about {result['yearly_saving']:,.0f} USD a year, so the tax "
+                    f"takes about {result['years_to_recover']:.1f} years to earn back. Most of it "
+                    "is paid earlier rather than extra: selling the fund later would owe it too."
+                )
+            else:
+                lines.append("The clone costs no less than the fund, so nothing earns it back.")
+        else:
+            lines = [
+                "With no unrealised gain, or in a tax-deferred account such as a 401(k) or an "
+                "IRA, switching costs no tax."
+            ]
+        st.caption(" ".join(lines))
+        reported = f"the {a.turnover:.0%} the fund reports" if a.turnover else "what the fund does"
+        st.caption(
+            f"The clone trades about {a.replication.annual_turnover / 2:.0%} of its value a year, "
+            f"counting buys and sells once each, against {reported}. In a taxable account those "
+            "sales realise gains too; quarterly rebalancing under Advanced roughly halves the "
+            "clone's trading."
+        )
+
+
+def render_orders(a: Analysis, params: dict, allocation: pd.DataFrame, amount: float) -> None:
+    """Whole-share orders for the clone's current weights, and the clone as a CSV."""
+    with st.expander("Illustrative orders at the latest prices"):
+        st.caption(
+            "What the clone's weights mean in whole shares. An illustration, not a "
+            "recommendation to trade: costs, taxes and your own situation come first."
+        )
         export = allocation
         if a.current_weights.empty:
             st.caption("The clone holds only T-bills at the moment, so there is nothing to buy.")
@@ -633,18 +788,40 @@ def render_clone(a: Analysis, params: dict, mode: str) -> None:
                     f"target weight is {gap:.1%}."
                 )
                 export = allocation.merge(buy[["ETF", "Shares"]], on="ETF", how="left")
-        if a.expense_ratio is not None:
-            st.caption(
-                f"Over {years} years, if the money grew {FEE_GROWTH:.0%} a year before fees, "
-                f"fees would take about {fee_cost(amount, a.expense_ratio, years):,.0f} USD in "
-                f"the fund and {fee_cost(amount, a.clone_expense_ratio, years):,.0f} in the clone."
-            )
         st.download_button(
             "Download the clone as CSV",
             export.to_csv(index=False).encode(),
             file_name=f"fundclone-{a.label.lower()}.csv",
             mime="text/csv",
         )
+
+
+def render_clone(a: Analysis, params: dict, mode: str) -> None:
+    rep = a.replication
+    cfg = rep.config
+    allocation = a.allocation()
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        st.markdown(f"**The clone today**, traded {rep.weights.index[-1]:%d %b %Y}")
+        show_table(allocation, {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
+        st.caption(
+            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on "
+            f"{cfg.frequency} returns of the past {cfg.window} trading days. "
+            f"Turnover {rep.annual_turnover:.1f}× a year at {cfg.cost_bps:g} bp per trade."
+        )
+    with right:
+        st.markdown("**What it costs**")
+        amount_col, years_col = st.columns([3, 2])
+        amount = amount_col.number_input("Amount, USD", 1_000, 10_000_000, 10_000, step=1_000)
+        years = years_col.number_input("Years", 1, 40, 10)
+        if a.expense_ratio is not None:
+            st.caption(
+                f"Over {years} years, if the money grew {FEE_GROWTH:.0%} a year before fees, "
+                f"fees would take about {fee_cost(amount, a.expense_ratio, years):,.0f} USD in "
+                f"the fund and {fee_cost(amount, a.clone_expense_ratio, years):,.0f} in the clone."
+            )
+            render_switching(a, amount, years)
+        render_orders(a, params, allocation, amount)
 
     st.markdown("**How the clone changed over time**")
     st.plotly_chart(charts.weights(rep.weights, mode), theme=None, config=PLOT_CONFIG)

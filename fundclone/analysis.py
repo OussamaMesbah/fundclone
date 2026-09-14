@@ -15,6 +15,7 @@ from fundclone.attribution import (
     factor_regression,
     rolling_betas,
 )
+from fundclone.costs import sales_charge_hint
 from fundclone.data import (
     FF6,
     adjust_splits,
@@ -41,6 +42,8 @@ TRADING_DAYS_PER_MONTH = 21
 STALE_RATE_DAYS = 62  # the French library usually lags one to two months; beyond that, say so
 PORTFOLIO_LABEL = "Portfolio"
 US_TIMEZONES = {"America/New_York"}  # exchanges whose prices are set with the ETFs' closes
+# Yahoo suffixes of European exchanges, for symbols whose time zone Yahoo does not report
+EUROPEAN_SUFFIXES = (".DE", ".F", ".L", ".PA", ".AS", ".MI", ".SW", ".MC", ".BR", ".VI", ".IR")
 # Quote types whose sudden jumps are checked for data errors and unadjusted splits (None:
 # unknown). Single stocks, crypto and the like are left alone: their jumps are often real.
 FUND_TYPES = {None, "MUTUALFUND", "ETF", "MONEYMARKET"}
@@ -71,6 +74,7 @@ class Analysis:
     attribution: AttributionResult | None  # None when the history is too short for it
     rolling_window: int  # months
     rolling_betas: pd.DataFrame
+    turnover: float | None = None  # the fund's reported holdings turnover, a year's share
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -93,7 +97,8 @@ class Analysis:
         return etfs.expense_ratio(self.current_weights.to_dict())
 
     def allocation(self) -> pd.DataFrame:
-        """The current clone: ETF, name, asset class, weight and expense ratio, plus cash."""
+        """The current clone: ETF, name, asset class, weight and expense ratio, plus cash,
+        and the ISIN of each ETF when the clone holds UCITS ETFs, which are bought by ISIN."""
         rows = [
             {
                 "ETF": ticker,
@@ -101,6 +106,7 @@ class Analysis:
                 "Asset class": etfs.BY_TICKER[ticker].asset_class,
                 "Weight": weight,
                 "Expense ratio": etfs.BY_TICKER[ticker].expense_ratio,
+                "ISIN": etfs.BY_TICKER[ticker].isin,
             }
             for ticker, weight in self.current_weights.items()
         ]
@@ -113,9 +119,13 @@ class Analysis:
                     "Asset class": "Cash",
                     "Weight": cash,
                     "Expense ratio": 0.0,
+                    "ISIN": "",
                 }
             )
-        return pd.DataFrame(rows)
+        table = pd.DataFrame(rows)
+        if table.empty or not table["ISIN"].astype(bool).any():
+            return table.drop(columns="ISIN", errors="ignore")
+        return table
 
 
 def run_analysis(
@@ -132,11 +142,13 @@ def run_analysis(
     price_loader: Callable[..., pd.DataFrame] = fetch_prices,
     factor_loader: Callable[..., pd.DataFrame] = load_french_factors,
     info_loader: Callable[[str], dict] = fetch_info,
+    etf_set: str = etfs.DEFAULT_SET,
 ) -> Analysis:
     """Clone a fund (a Yahoo Finance ticker) or a portfolio ({ticker: weight}) with ETFs.
 
-    `start` and `end` are inclusive ISO dates. `asset_classes` restricts the ETFs the
-    clone may use (see etfs.ASSET_CLASSES). The factor model's `region` and whether it
+    `start` and `end` are inclusive ISO dates. The clone is built from the ETFs of
+    `etf_set`, or of the `asset_classes` given (see etfs.asset_classes); ETFs quoted in
+    another currency are converted to USD like the fund. The factor model's `region` and whether it
     includes term and credit factors default to what the clone holds. A replication
     frequency of "auto" becomes weekly when anything is priced outside US trading hours.
     The loaders can be replaced by cached or offline versions with the same signatures; a
@@ -159,25 +171,52 @@ def run_analysis(
             notes.append(f"Yahoo Finance reports no currency for {ticker}; prices are read as USD.")
         currencies[ticker] = info.get("currency") or "USD"
     foreign = {ticker: c for ticker, c in currencies.items() if fx_ticker(c)}
+    in_europe = all(_priced_in_europe(ticker, infos[ticker]) for ticker in members)
+    if etf_set == etfs.DEFAULT_SET and in_europe:
+        notes.append(
+            f"{label} is priced in European hours. UCITS ETFs on Xetra, priced at the same time, "
+            "may clone it more closely; choose them as the ETF set."
+        )
+    elif etf_set == etfs.UCITS and not in_europe:
+        notes.append(
+            "UCITS ETFs close on Xetra hours before US prices are set, so the weekly figures "
+            "include that timing noise and understate how closely the clone tracks. For funds "
+            "priced in US hours, the US-listed ETFs give the truer picture."
+        )
+    universe = etfs.tickers(asset_classes, etf_set)
+    if holdings is None and label in universe:
+        universe.remove(label)
+        notes.append(f"{label} itself is left out of the ETFs the clone may use.")
+    # ETFs quoted in another currency, such as UCITS ETFs on Xetra, trade in European hours
+    foreign_etfs = {
+        ticker: etfs.BY_TICKER[ticker].currency
+        for ticker in universe
+        if fx_ticker(etfs.BY_TICKER[ticker].currency)
+    }
     if config.frequency == "auto":
         abroad = [ticker for ticker in members if _priced_abroad(ticker, infos[ticker])]
-        config = replace(config, frequency="weekly" if abroad else "daily")
+        config = replace(config, frequency="weekly" if abroad or foreign_etfs else "daily")
         if abroad:
             notes.append(
                 f"{', '.join(abroad)} {'is' if len(abroad) == 1 else 'are'} priced outside US "
                 "trading hours, so the clone is fitted on weekly returns."
             )
+        elif foreign_etfs:
+            notes.append(
+                "The ETFs trade outside US trading hours, so the clone is fitted on weekly returns."
+            )
 
-    universe = etfs.tickers(asset_classes)
-    if holdings is None and label in universe:
-        universe.remove(label)
-        notes.append(f"{label} itself is left out of the ETFs the clone may use.")
-    fx = sorted({fx_ticker(c) for c in foreign.values()})
+    fx = sorted({fx_ticker(c) for c in [*foreign.values(), *foreign_etfs.values()]})
     tickers = [*members, *universe, *BOND_FACTOR_TICKERS, *fx]
     end_exclusive = (pd.Timestamp(end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-    prices = price_loader(tickers, start, end_exclusive)
-    notes.extend(prices.attrs.get("notes", []))
+    loaded = price_loader(tickers, start, end_exclusive)
+    notes.extend(loaded.attrs.get("notes", []))
+    prices = etfs.without_known_errors(loaded)
     universe = [ticker for ticker in universe if ticker in prices]
+    if foreign_etfs:
+        prices = _etfs_in_usd(prices, {t: c for t, c in foreign_etfs.items() if t in universe})
+        quoted = " and ".join(sorted(set(foreign_etfs.values())))
+        notes.append(f"The ETFs are quoted in {quoted}; their prices are converted to USD.")
 
     missing = [t for t in members if t not in prices or prices[t].dropna().empty]
     if missing:
@@ -220,9 +259,12 @@ def run_analysis(
         fund_prices = _cleaned(member_prices[label], prices[universe], label, notes, fund_like)
         name = infos[label].get("name") or label
         expense = infos[label].get("expense_ratio")
+        turnover = infos[label].get("turnover")
+        if hint := sales_charge_hint(name):
+            notes.append(hint)
     else:
         fund_prices = _index(portfolio_returns(pd.DataFrame(member_prices), holdings))
-        name, expense = "Custom portfolio", None
+        name, expense, turnover = "Custom portfolio", None, None
 
     # Every daily series is put on the fund's trading calendar, so that holidays in one
     # market (or stale fund prices dropped above) do not lose another series' returns.
@@ -271,6 +313,7 @@ def run_analysis(
         attribution=attribution,
         rolling_window=rolling_window,
         rolling_betas=betas,
+        turnover=turnover,
         notes=notes,
     )
 
@@ -285,6 +328,15 @@ def _priced_abroad(ticker: str, info: Mapping) -> bool:
     if timezone:
         return timezone not in US_TIMEZONES
     return "." in ticker
+
+
+def _priced_in_europe(ticker: str, info: Mapping) -> bool:
+    """Whether the price is set in European trading hours, by the exchange's time zone or,
+    when Yahoo reports none, by the symbol's suffix."""
+    timezone = info.get("timezone")
+    if timezone:
+        return timezone.startswith("Europe/")
+    return ticker.upper().endswith(EUROPEAN_SUFFIXES)
 
 
 def _cleaned(
@@ -365,11 +417,23 @@ def _normalised(weights: Mapping[str, float]) -> dict[str, float]:
     return {ticker: weight / total for ticker, weight in cleaned.items()}
 
 
+def _etfs_in_usd(prices: pd.DataFrame, currencies: Mapping[str, str]) -> pd.DataFrame:
+    """The prices with each ETF of `currencies` converted to USD at Yahoo's exchange rates."""
+    prices = prices.copy()
+    for ticker, currency in currencies.items():
+        rate = fx_ticker(currency)
+        if rate not in prices:
+            raise ValueError(
+                f"{ticker} trades in {currency}, but no {rate} exchange rates were found."
+            )
+        prices[ticker] = to_usd(prices[ticker].dropna(), prices[rate])
+    return prices
+
+
 def _equity_share(classes: Mapping[str, float]) -> float:
     """Share of the invested weight that sits in equity ETFs, US or international."""
     invested = sum(classes.values())
-    equity = sum(classes.get(c, 0.0) for c in etfs.EQUITY_CLASSES + etfs.INTERNATIONAL_CLASSES)
-    return equity / invested if invested > 0 else 0.0
+    return etfs.equity_weight(classes) / invested if invested > 0 else 0.0
 
 
 def _region_for(classes: Mapping[str, float]) -> str:
@@ -379,10 +443,10 @@ def _region_for(classes: Mapping[str, float]) -> str:
     of a few basis points of equity between regions is noise.
     """
     invested = sum(classes.values())
-    equity = sum(classes.get(c, 0.0) for c in etfs.EQUITY_CLASSES + etfs.INTERNATIONAL_CLASSES)
+    equity = etfs.equity_weight(classes)
     if invested <= 0 or equity < MIN_EQUITY_FOR_REGION * invested:
         return "US"
-    share = sum(classes.get(c, 0.0) for c in etfs.INTERNATIONAL_CLASSES) / equity
+    share = etfs.international_weight(classes) / equity
     if share > 0.8:
         return "Developed ex US"
     return "Developed" if share > 0.35 else "US"

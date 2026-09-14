@@ -45,6 +45,7 @@ def fake_info(ticker):
         "currency": "EUR" if ticker.endswith(".DE") else "USD",
         "quote_type": "MUTUALFUND",
         "expense_ratio": 0.0075 if ticker == "FUND" else None,
+        "turnover": 0.35 if ticker == "FUND" else None,
     }
 
 

@@ -219,3 +219,23 @@ def test_region_ignores_a_sliver_of_equity():
 def test_invalid_portfolio_weights_raise(weights):
     with pytest.raises(ValueError, match="non-negative"):
         analyse(weights)
+
+
+def test_a_fund_priced_in_europe_is_pointed_to_the_ucits_etfs():
+    a = analyse("FUND.DE")  # fake_info quotes .DE symbols in EUR, without a time zone
+    assert any("priced in European hours" in note for note in a.notes)
+
+
+def test_ucits_etfs_for_a_us_fund_come_with_a_warning_about_timing():
+    ucits = [etfs.asset_classes("UCITS")[0], "EUR bonds"]
+    a = analyse(asset_classes=ucits, etf_set="UCITS")
+    assert any("timing noise" in note for note in a.notes)
+    assert any("converted to USD" in note for note in a.notes)
+    assert all(ticker.endswith(".DE") for ticker in a.replication.weights.columns)
+    held = a.allocation()
+    held = held[held["ETF"] != "Cash"]
+    assert held["ISIN"].str.len().eq(12).all()  # UCITS ETFs are bought by ISIN
+
+
+def test_a_clone_of_us_listed_etfs_has_no_isin_column():
+    assert "ISIN" not in analyse().allocation().columns
