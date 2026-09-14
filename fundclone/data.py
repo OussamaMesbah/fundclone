@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import logging
 import os
 import re
 import time
@@ -22,6 +23,7 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 
 FRENCH_BASE_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp"
 CACHE_DIR = Path(os.environ.get("FUNDCLONE_CACHE", Path.home() / ".cache" / "fundclone"))
@@ -209,6 +211,35 @@ def load_french_factors(region: str = "US", frequency: str = "monthly") -> pd.Da
 
 
 _RETRIES = 5  # tickers retried one by one after a batch download leaves them out
+RATE_LIMIT_WAITS = (2.0, 5.0)  # seconds before each new try while Yahoo limits requests
+
+
+class YahooRateLimitError(ValueError):
+    """Yahoo Finance refused requests because too many arrived in a short time."""
+
+    def __init__(self, tickers: Iterable[str] = ()) -> None:
+        tickers = list(tickers)
+        shown = ", ".join(tickers[:5]) + (" and others" if len(tickers) > 5 else "")
+        detail = f", so there are no prices for {shown}" if tickers else ""
+        super().__init__(
+            f"Yahoo Finance is limiting requests right now{detail}. Try again in a minute or two."
+        )
+
+
+class _LoggedErrors(logging.Handler):
+    """Collects the errors yfinance logs while it downloads: it reports failed tickers,
+    rate limits included, in its log rather than raising them."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.ERROR)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+    @property
+    def rate_limited(self) -> bool:
+        return any("RateLimit" in m or "Too Many Requests" in m for m in self.messages)
 
 
 def fetch_prices(tickers: Iterable[str], start: str, end: str) -> pd.DataFrame:
@@ -228,10 +259,16 @@ def fetch_prices(tickers: Iterable[str], start: str, end: str) -> pd.DataFrame:
             stale.append(ticker)
         else:
             closes[ticker] = cached
+    limited = False
     if stale:
-        downloaded = _download_closes(stale)
-        for ticker in [t for t in stale if t not in downloaded][:_RETRIES]:
-            downloaded.update(_download_closes([ticker]))
+        downloaded: dict[str, pd.Series] = {}
+        try:
+            downloaded.update(_download_closes(stale))
+            for ticker in [t for t in stale if t not in downloaded][:_RETRIES]:
+                downloaded.update(_download_closes([ticker]))
+        except YahooRateLimitError:
+            limited = True
+        missing = []
         for ticker in stale:
             path = _cache_file("prices", ticker, ".csv")
             if ticker in downloaded:
@@ -241,11 +278,23 @@ def fetch_prices(tickers: Iterable[str], start: str, end: str) -> pd.DataFrame:
                 old = _cached(path, float("inf"), _read_prices)
                 if old is not None:
                     closes[ticker] = old
+                else:
+                    missing.append(ticker)
+        # Without the limit a missing ticker simply has no data; with it, leaving the ticker
+        # out would quietly give a worse clone, so say what happened instead.
+        if limited and missing:
+            raise YahooRateLimitError(missing)
     if not closes:
         return pd.DataFrame()
     prices = pd.concat(closes, axis=1, sort=True)
     prices = prices[(prices.index >= pd.Timestamp(start)) & (prices.index < pd.Timestamp(end))]
-    return prices[[t for t in tickers if t in prices]].dropna(how="all")
+    prices = prices[[t for t in tickers if t in prices]].dropna(how="all")
+    if limited:
+        prices.attrs["notes"] = [
+            "Yahoo Finance is limiting requests right now, so some prices come from an earlier "
+            "download."
+        ]
+    return prices
 
 
 def _read_prices(path: Path) -> pd.Series:
@@ -256,10 +305,33 @@ def _read_prices(path: Path) -> pd.Series:
 
 
 def _download_closes(tickers: list[str]) -> dict[str, pd.Series]:
-    try:
-        raw = yf.download(tickers, period="max", auto_adjust=True, progress=False, threads=False)
-    except Exception:  # yfinance raises assorted errors for bad symbols and network trouble
-        return {}
+    """Adjusted closes by ticker; tickers without data are left out.
+
+    yfinance logs failures instead of raising them. While its log shows that Yahoo is
+    limiting requests, the download is repeated after each of RATE_LIMIT_WAITS, and
+    YahooRateLimitError is raised if the limit outlasts them. To keep yfinance quiet, stop
+    its logger from propagating rather than raising its level, or the limit goes unseen.
+    """
+    log = logging.getLogger("yfinance")
+    for wait in (*RATE_LIMIT_WAITS, None):
+        errors = _LoggedErrors()
+        log.addHandler(errors)
+        try:
+            raw = yf.download(
+                tickers, period="max", auto_adjust=True, progress=False, threads=False
+            )
+        except YFRateLimitError:
+            raw = None
+            errors.messages.append("YFRateLimitError")
+        except Exception:  # yfinance raises assorted errors for bad symbols and network trouble
+            raw = None
+        finally:
+            log.removeHandler(errors)
+        if not errors.rate_limited:
+            break
+        if wait is None:
+            raise YahooRateLimitError()
+        time.sleep(wait)
     if raw is None or raw.empty:
         return {}
     close = raw["Close"]

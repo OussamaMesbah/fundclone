@@ -8,6 +8,9 @@
 - What switching costs: a warning for share classes whose name implies a sales load, the
   tax on gains realised by selling the fund, how long the lower fees take to earn it back,
   and the clone's trading against the turnover the fund reports.
+- When Yahoo Finance limits requests, the download waits and tries twice more. If the limit
+  lasts, earlier prices are used with a note, or the app and the command line say that
+  Yahoo is limiting requests instead of reporting missing data.
 - The benchmark reports a bootstrap range for its median tracking error, and can limit the
   ETFs to those already trading at a date (`--universe traded-by:2009-01-02`). Limited to
   the 68 ETFs that traded by January 2009, the median over all 64 funds stays at 2.91%.

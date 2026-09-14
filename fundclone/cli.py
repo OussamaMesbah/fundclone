@@ -85,7 +85,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.start >= args.end:
         parser.error("--start must come before --end")
     classes = _asset_classes(parser, args.asset_classes)
-    logging.getLogger("yfinance").setLevel(logging.CRITICAL)  # its 404 messages repeat ours
+    # yfinance's 404 messages repeat ours. Keep them off the terminal without raising the
+    # logger's level: fundclone.data reads them to notice when Yahoo limits requests.
+    yahoo = logging.getLogger("yfinance")
+    yahoo.addHandler(logging.NullHandler())
+    yahoo.propagate = False
 
     try:
         target = parse_portfolio(args.target) if looks_like_portfolio(args.target) else args.target

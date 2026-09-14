@@ -186,6 +186,7 @@ is open source under the MIT license, benchmark included.
   the ESMA screen.
 - Prices come from Yahoo Finance through yfinance. They have gaps and errors, and Yahoo's
   terms allow personal, non-commercial use only, so the repository ships no Yahoo data.
+  When Yahoo limits requests, FundClone waits, tries again and then says so.
 - Every figure follows the fund's net asset value: after its expense ratio, but before any
   sales load and before tax. The app warns for share classes whose name implies a load, and
   turns a load and your own tax situation into numbers, but it knows neither.

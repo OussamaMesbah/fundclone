@@ -19,7 +19,13 @@ from fundclone import charts, etfs
 from fundclone.analysis import Analysis, run_analysis
 from fundclone.attribution import FACTOR_DESCRIPTIONS, FACTOR_NAMES
 from fundclone.costs import load_drag, switching
-from fundclone.data import REGIONS, fetch_info, fetch_prices, load_french_factors
+from fundclone.data import (
+    REGIONS,
+    YahooRateLimitError,
+    fetch_info,
+    fetch_prices,
+    load_french_factors,
+)
 from fundclone.factsheet import parse_factsheet_safely
 from fundclone.portfolio import is_ticker, parse_portfolio, whole_shares
 from fundclone.replication import ReplicationConfig
@@ -180,16 +186,22 @@ def prices_cached(tickers: list[str], start: str, end: str) -> pd.DataFrame:
     """Prices from Yahoo Finance, cached; tickers Yahoo does not answer for come from the
     snapshot, with a note for the analysis to show."""
     tickers = list(dict.fromkeys(tickers))  # run_analysis may ask for a ticker twice
-    live = live_prices(tickers, start, end)
     stored = snapshot()
+    try:
+        live = live_prices(tickers, start, end)
+    except YahooRateLimitError:  # not cached, so the next try asks Yahoo again
+        if stored.empty:
+            raise
+        live = pd.DataFrame()
     fill = [ticker for ticker in tickers if ticker not in live and ticker in stored]
     if not fill:
         return live
     period = (stored.index >= pd.Timestamp(start)) & (stored.index < pd.Timestamp(end))
     prices = pd.concat([live, stored.loc[period, fill]], axis=1).sort_index()
     prices.attrs["notes"] = [
+        *live.attrs.get("notes", []),
         f"Yahoo Finance did not answer for {', '.join(fill)}, so their prices come from the "
-        f"local price snapshot of {stored.index[-1]:%Y-%m-%d}."
+        f"local price snapshot of {stored.index[-1]:%Y-%m-%d}.",
     ]
     return prices
 

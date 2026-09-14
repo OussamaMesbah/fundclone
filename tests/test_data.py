@@ -1,4 +1,5 @@
 import json
+import logging
 from types import SimpleNamespace
 
 import numpy as np
@@ -261,3 +262,59 @@ def test_interest_is_compounded_over_gaps_and_carried_forward():
     assert rf.iloc[1] == pytest.approx(1.001**3 - 1)  # 3, 4 and 5 January
     assert rf.iloc[2] == pytest.approx(0.001)  # a Monday after a Friday
     assert rf.iloc[3] == pytest.approx(1.001**5 - 1)  # 9 to 15 January, from the 11th assumed
+
+
+RATE_LIMIT_LOG = "['AAA']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')"
+
+
+def closes_frame(tickers):
+    """What yf.download returns: columns (price field, ticker)."""
+    closes = pd.DataFrame({ticker: [1.0, 2.0, 3.0] for ticker in tickers}, index=DATES[:3])
+    return pd.concat({"Close": closes}, axis=1)
+
+
+def test_a_rate_limit_is_waited_out_and_the_download_repeated(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    attempts, waits = [], []
+
+    def download(tickers, **kwargs):
+        attempts.append(tickers)
+        if len(attempts) == 1:  # yfinance logs the limit instead of raising it
+            logging.getLogger("yfinance").error(RATE_LIMIT_LOG)
+            return pd.DataFrame()
+        return closes_frame(tickers)
+
+    monkeypatch.setattr(data.yf, "download", download)
+    monkeypatch.setattr(data.time, "sleep", waits.append)
+    prices = data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")
+    assert prices["AAA"].tolist() == [1.0, 2.0, 3.0]
+    assert waits == [data.RATE_LIMIT_WAITS[0]]
+    assert "notes" not in prices.attrs
+
+
+def test_a_lasting_rate_limit_says_so_instead_of_returning_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    waits = []
+
+    def download(tickers, **kwargs):
+        logging.getLogger("yfinance").error(RATE_LIMIT_LOG)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(data.yf, "download", download)
+    monkeypatch.setattr(data.time, "sleep", waits.append)
+    with pytest.raises(data.YahooRateLimitError, match="no prices for AAA. Try again"):
+        data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")
+    assert waits == list(data.RATE_LIMIT_WAITS)
+
+
+def test_during_a_rate_limit_earlier_prices_are_used_with_a_note(cache, monkeypatch):
+    data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")  # fills the cache
+    monkeypatch.setattr(data, "PRICE_MAX_AGE", -1)  # everything is stale now
+
+    def limited(tickers):
+        raise data.YahooRateLimitError()
+
+    monkeypatch.setattr(data, "_download_closes", limited)
+    prices = data.fetch_prices(["AAA"], "2024-01-01", "2024-01-06")
+    assert prices["AAA"].tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
+    assert "limiting requests" in prices.attrs["notes"][0]
