@@ -8,6 +8,8 @@
 - What switching costs: a warning for share classes whose name implies a sales load, the
   tax on gains realised by selling the fund, how long the lower fees take to earn it back,
   and the clone's trading against the turnover the fund reports.
+- [docs/method.md](docs/method.md): every step of the method with its parameters, formulas
+  and references.
 - When Yahoo Finance limits requests, the download waits and tries twice more. If the limit
   lasts, earlier prices are used with a note, or the app and the command line say that
   Yahoo is limiting requests instead of reporting missing data.

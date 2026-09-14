@@ -9,8 +9,9 @@ from scipy import stats
 from fundclone.analysis import Analysis
 from fundclone.metrics import years_spanned
 
-# ESMA's returns-based screen for potential closet index funds (TRV No. 2, 2020): against
-# the benchmark, tracking error below 3%, R² above 95% and beta between 0.95 and 1.05.
+# The returns-based screen for potential closet index funds of an ESMA working paper
+# (Danieli, Harris and Pichini, ESMA Working Paper No. 2, 2020): against the benchmark,
+# tracking error below 3%, R² above 95% and beta between 0.95 and 1.05.
 ESMA_TRACKING_ERROR = 0.03
 ESMA_R_SQUARED = 0.95
 ESMA_BETA = (0.95, 1.05)

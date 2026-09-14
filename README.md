@@ -124,7 +124,9 @@ FundClone builds on returns-based style analysis
 explained by a long-only mix of asset-class returns. Sharpe fitted that mix once, over the
 whole history, to describe a fund's style. FundClone refits it every month from past data
 only, on ETFs you can buy, and measures out of sample, after trading costs, how closely the
-clone follows the fund and what the fund returns beyond it.
+clone follows the fund and what the fund returns beyond it. Every step, with its parameters
+and references, is in
+[docs/method.md](https://github.com/OussamaMesbah/fundclone/blob/master/docs/method.md).
 
 1. **Building blocks.** 81 liquid US-listed ETFs: size and style, the eleven sectors, 16
    industries, factor ETFs, developed and emerging regions, 18 bond ETFs, REITs, gold and
