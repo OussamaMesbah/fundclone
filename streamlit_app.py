@@ -18,7 +18,14 @@ import streamlit as st
 from fundclone import charts, etfs
 from fundclone.analysis import Analysis, run_analysis
 from fundclone.attribution import FACTOR_DESCRIPTIONS, FACTOR_NAMES
-from fundclone.data import REGIONS, fetch_info, fetch_prices, load_french_factors
+from fundclone.costs import load_drag, switching
+from fundclone.data import (
+    REGIONS,
+    YahooRateLimitError,
+    fetch_info,
+    fetch_prices,
+    load_french_factors,
+)
 from fundclone.factsheet import parse_factsheet_safely
 from fundclone.portfolio import is_ticker, parse_portfolio, whole_shares
 from fundclone.replication import ReplicationConfig
@@ -71,6 +78,7 @@ DISCLAIMER = (
 ESMA_PAPER = (
     "https://www.esma.europa.eu/sites/default/files/library/esmawp-2020-2_closet_indexing.pdf"
 )
+SHARPE_PAPER = "https://web.stanford.edu/~wfsharpe/art/sa/sa.htm"
 _MARKDOWN = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$:])")
 _AUTOLINK = re.compile(r"(?i)(https?|www)(?=[:.])|(@)")
 
@@ -97,6 +105,12 @@ median tracking errors differed by at most 0.15 percentage points; compared with
 least squares it trades about half as much for about the same tracking error (see the
 benchmark in the repository).
 
+**Where it comes from.** The clone is returns-based style analysis
+([Sharpe, 1992]({SHARPE_PAPER})), which explains a fund's returns by a long-only mix of
+asset-class returns. Sharpe fitted the mix once, over the whole history, to describe a
+fund's style. FundClone refits it every month from past data only, on ETFs you can buy,
+so the clone is one you could have held in real time.
+
 **Out of sample, always.** The clone's weights on any day come only from data before
 that day. Tracking error, R² and the fund-minus-clone return are measured on these
 out-of-sample returns, so they show what someone copying the fund in real time would have
@@ -112,7 +126,11 @@ data errors, and unadjusted splits are corrected.
 its expense ratio, the ETFs' prices net of theirs, and the clone pays trading costs on
 top. The gap is the difference in compound annual growth. If its 95% range lies above
 zero, the manager added something cheap ETFs could not. A range that straddles zero
-means the difference is within the noise.
+means the difference is within the noise. The range uses a Newey-West standard error,
+which widens it when a gap tends to carry over from one week to the next. The verdict
+also sets the fund against the closest single ETF, the simplest alternative to it. That
+ETF is picked with hindsight, as the one that tracked best, which flatters the ETF rather
+than the fund.
 
 **Closet index screen.** For equity funds with a year or more of out-of-sample returns,
 FundClone applies the three returns-based thresholds of an ESMA working paper on potential
@@ -125,6 +143,12 @@ to meet. Where none does, as for total international or all-world indices, it ca
 them harder, so failing the screen does not clear a fund. An active fund that meets all
 three is a candidate for a closer look, not proof of anything; for an index fund it is
 expected.
+
+**What the figures leave out.** The fund's returns follow its net asset value: after its
+expense ratio, but before any sales load and before tax. Where a share class name implies
+a load, the verdict says so. Under the clone, "Switching from the fund" turns a load, the
+gains you would realise and your tax rate into numbers, and compares how much the clone
+trades with what the fund reports.
 
 **Factor exposures.** A second, academic view regresses the fund's monthly excess returns
 on the Fama-French five factors and momentum, with term and credit factors for funds
@@ -162,16 +186,22 @@ def prices_cached(tickers: list[str], start: str, end: str) -> pd.DataFrame:
     """Prices from Yahoo Finance, cached; tickers Yahoo does not answer for come from the
     snapshot, with a note for the analysis to show."""
     tickers = list(dict.fromkeys(tickers))  # run_analysis may ask for a ticker twice
-    live = live_prices(tickers, start, end)
     stored = snapshot()
+    try:
+        live = live_prices(tickers, start, end)
+    except YahooRateLimitError:  # not cached, so the next try asks Yahoo again
+        if stored.empty:
+            raise
+        live = pd.DataFrame()
     fill = [ticker for ticker in tickers if ticker not in live and ticker in stored]
     if not fill:
         return live
     period = (stored.index >= pd.Timestamp(start)) & (stored.index < pd.Timestamp(end))
     prices = pd.concat([live, stored.loc[period, fill]], axis=1).sort_index()
     prices.attrs["notes"] = [
+        *live.attrs.get("notes", []),
         f"Yahoo Finance did not answer for {', '.join(fill)}, so their prices come from the "
-        f"local price snapshot of {stored.index[-1]:%Y-%m-%d}."
+        f"local price snapshot of {stored.index[-1]:%Y-%m-%d}.",
     ]
     return prices
 
@@ -594,25 +624,79 @@ def render_verdict(a: Analysis) -> None:
         st.caption(plain(note))
 
 
-def render_clone(a: Analysis, params: dict, mode: str) -> None:
-    rep = a.replication
-    cfg = rep.config
-    allocation = a.allocation()
-    left, right = st.columns([3, 2], gap="large")
-    with left:
-        st.markdown(f"**The clone today**, traded {rep.weights.index[-1]:%d %b %Y}")
-        show_table(allocation, {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
-        st.caption(
-            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on "
-            f"{cfg.frequency} returns of the past {cfg.window} trading days. "
-            f"Turnover {rep.annual_turnover:.1f}× a year at {cfg.cost_bps:g} bp per trade."
+def render_switching(a: Analysis, amount: float, years: int) -> None:
+    """What leaving the fund for the clone costs: its sales load, the tax on realised gains
+    and the trading the clone does from then on."""
+    with st.expander("Switching from the fund: load, tax and trading"):
+        # one below the other: the column is too narrow for three inputs side by side
+        load = (
+            st.number_input(
+                "Sales load paid, %",
+                0.0,
+                10.0,
+                0.0,
+                step=0.25,
+                help="A front-end load is not in the fund's returns here, which follow its net "
+                "asset value. Class A shares of stock funds often charge up to 5.75%.",
+            )
+            / 100
         )
-    with right:
-        st.markdown("**Build it**")
-        st.caption("An illustration at the latest prices, not a recommendation to trade.")
-        amount_col, years_col = st.columns([3, 2])
-        amount = amount_col.number_input("Amount, USD", 1_000, 10_000_000, 10_000, step=1_000)
-        years = years_col.number_input("Years", 1, 40, 10)
+        gain = (
+            st.number_input(
+                "Unrealised gain, % of the amount",
+                0.0,
+                100.0,
+                0.0,
+                step=5.0,
+                help="Gains you would realise by selling the fund in a taxable account. In a "
+                "401(k), an IRA or another tax-deferred account, switching costs no tax.",
+            )
+            / 100
+        )
+        rate = st.number_input("Tax rate on gains, %", 0.0, 60.0, 15.0, step=1.0) / 100
+
+        if load > 0:
+            st.caption(
+                f"A {load:.2%} sales load on {amount:,.0f} USD costs {amount * load:,.0f} USD up "
+                f"front, as much as {load_drag(load, years):.2%} a year over {years} years."
+            )
+        saved = a.expense_ratio + load_drag(load, years) - a.clone_expense_ratio
+        result = switching(amount, gain, rate, saved)
+        if result["tax"] > 0:
+            lines = [
+                f"Selling the fund would realise {amount * gain:,.0f} USD of gains and cost about "
+                f"{result['tax']:,.0f} USD in tax."
+            ]
+            if saved > 0:
+                lines.append(
+                    f"The clone saves about {result['yearly_saving']:,.0f} USD a year, so the tax "
+                    f"takes about {result['years_to_recover']:.1f} years to earn back. Most of it "
+                    "is paid earlier rather than extra: selling the fund later would owe it too."
+                )
+            else:
+                lines.append("The clone costs no less than the fund, so nothing earns it back.")
+        else:
+            lines = [
+                "With no unrealised gain, or in a tax-deferred account such as a 401(k) or an "
+                "IRA, switching costs no tax."
+            ]
+        st.caption(" ".join(lines))
+        reported = f"the {a.turnover:.0%} the fund reports" if a.turnover else "what the fund does"
+        st.caption(
+            f"The clone trades about {a.replication.annual_turnover / 2:.0%} of its value a year, "
+            f"counting buys and sells once each, against {reported}. In a taxable account those "
+            "sales realise gains too; quarterly rebalancing under Advanced roughly halves the "
+            "clone's trading."
+        )
+
+
+def render_orders(a: Analysis, params: dict, allocation: pd.DataFrame, amount: float) -> None:
+    """Whole-share orders for the clone's current weights, and the clone as a CSV."""
+    with st.expander("Illustrative orders at the latest prices"):
+        st.caption(
+            "What the clone's weights mean in whole shares. An illustration, not a "
+            "recommendation to trade: costs, taxes and your own situation come first."
+        )
         export = allocation
         if a.current_weights.empty:
             st.caption("The clone holds only T-bills at the moment, so there is nothing to buy.")
@@ -633,18 +717,40 @@ def render_clone(a: Analysis, params: dict, mode: str) -> None:
                     f"target weight is {gap:.1%}."
                 )
                 export = allocation.merge(buy[["ETF", "Shares"]], on="ETF", how="left")
-        if a.expense_ratio is not None:
-            st.caption(
-                f"Over {years} years, if the money grew {FEE_GROWTH:.0%} a year before fees, "
-                f"fees would take about {fee_cost(amount, a.expense_ratio, years):,.0f} USD in "
-                f"the fund and {fee_cost(amount, a.clone_expense_ratio, years):,.0f} in the clone."
-            )
         st.download_button(
             "Download the clone as CSV",
             export.to_csv(index=False).encode(),
             file_name=f"fundclone-{a.label.lower()}.csv",
             mime="text/csv",
         )
+
+
+def render_clone(a: Analysis, params: dict, mode: str) -> None:
+    rep = a.replication
+    cfg = rep.config
+    allocation = a.allocation()
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        st.markdown(f"**The clone today**, traded {rep.weights.index[-1]:%d %b %Y}")
+        show_table(allocation, {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
+        st.caption(
+            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on "
+            f"{cfg.frequency} returns of the past {cfg.window} trading days. "
+            f"Turnover {rep.annual_turnover:.1f}× a year at {cfg.cost_bps:g} bp per trade."
+        )
+    with right:
+        st.markdown("**What it costs**")
+        amount_col, years_col = st.columns([3, 2])
+        amount = amount_col.number_input("Amount, USD", 1_000, 10_000_000, 10_000, step=1_000)
+        years = years_col.number_input("Years", 1, 40, 10)
+        if a.expense_ratio is not None:
+            st.caption(
+                f"Over {years} years, if the money grew {FEE_GROWTH:.0%} a year before fees, "
+                f"fees would take about {fee_cost(amount, a.expense_ratio, years):,.0f} USD in "
+                f"the fund and {fee_cost(amount, a.clone_expense_ratio, years):,.0f} in the clone."
+            )
+            render_switching(a, amount, years)
+        render_orders(a, params, allocation, amount)
 
     st.markdown("**How the clone changed over time**")
     st.plotly_chart(charts.weights(rep.weights, mode), theme=None, config=PLOT_CONFIG)

@@ -15,8 +15,7 @@ def result():
 def test_interval_is_a_t_interval_for_the_log_gap_in_annual_returns(result):
     t = result.tracking
     low, high = interval(t)
-    years = t["observations"] / t["periods_per_year"]
-    half = stats.t.ppf(0.975, t["observations"] - 1) * t["active_risk"] / math.sqrt(years)
+    half = stats.t.ppf(0.975, t["observations"] - 1) * t["log_gap_se"]
     base = 1 + t["clone_return"]
     assert low == pytest.approx(base * math.expm1(t["log_gap"] - half))
     assert high == pytest.approx(base * math.expm1(t["log_gap"] + half))
@@ -56,6 +55,14 @@ def test_closet_index_check_expects_index_funds_to_pass(result, monkeypatch):
 def test_headline_reports_the_range_of_the_gap(result):
     low, high = interval(result.tracking)
     assert f"{_signed(low)} to {_signed(high)}" in headline(result)[2]
+
+
+def test_headline_compares_the_fund_with_the_closest_single_etf(result):
+    low, high = interval(result.closest_tracking)
+    line = headline(result)[3]
+    assert line.startswith(f"The closest single ETF, {result.closest_etf},")
+    assert f"against it alone, {result.label} returned" in line
+    assert f"95% range {_signed(low)} to {_signed(high)}" in line
 
 
 def test_a_short_sample_gets_no_range_no_closest_etf_and_no_annual_gap(result, monkeypatch):

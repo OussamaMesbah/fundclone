@@ -15,6 +15,7 @@ from fundclone.attribution import (
     factor_regression,
     rolling_betas,
 )
+from fundclone.costs import sales_charge_hint
 from fundclone.data import (
     FF6,
     adjust_splits,
@@ -71,6 +72,7 @@ class Analysis:
     attribution: AttributionResult | None  # None when the history is too short for it
     rolling_window: int  # months
     rolling_betas: pd.DataFrame
+    turnover: float | None = None  # the fund's reported holdings turnover, a year's share
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -220,9 +222,12 @@ def run_analysis(
         fund_prices = _cleaned(member_prices[label], prices[universe], label, notes, fund_like)
         name = infos[label].get("name") or label
         expense = infos[label].get("expense_ratio")
+        turnover = infos[label].get("turnover")
+        if hint := sales_charge_hint(name):
+            notes.append(hint)
     else:
         fund_prices = _index(portfolio_returns(pd.DataFrame(member_prices), holdings))
-        name, expense = "Custom portfolio", None
+        name, expense, turnover = "Custom portfolio", None, None
 
     # Every daily series is put on the fund's trading calendar, so that holidays in one
     # market (or stale fund prices dropped above) do not lose another series' returns.
@@ -271,6 +276,7 @@ def run_analysis(
         attribution=attribution,
         rolling_window=rolling_window,
         rolling_betas=betas,
+        turnover=turnover,
         notes=notes,
     )
 

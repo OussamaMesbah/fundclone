@@ -31,6 +31,25 @@ def years_spanned(index: pd.Index, periods_per_year: int = TRADING_DAYS) -> floa
     return n / periods_per_year
 
 
+def newey_west_variance(values: np.ndarray, lags: int | None = None) -> float:
+    """Long-run variance of a series: its variance plus the autocovariances up to `lags`,
+    with Bartlett weights (Newey and West, 1987). The default number of lags,
+    floor(4 (n / 100)^(2/9)), follows Newey and West (1994): 6 for 16 years of weeks.
+
+    For independent observations it is close to the plain variance; when a gap in one week
+    tends to carry over into the next, it is larger, and so is the uncertainty of the mean.
+    """
+    x = np.asarray(values, dtype=float)
+    x = x - x.mean()
+    n = len(x)
+    if lags is None:
+        lags = int(4 * (n / 100) ** (2 / 9))
+    variance = float(x @ x) / n
+    for k in range(1, min(lags, n - 1) + 1):
+        variance += 2 * (1 - k / (lags + 1)) * float(x[k:] @ x[:-k]) / n
+    return max(variance, 0.0)
+
+
 def performance(
     returns: pd.Series, rf: pd.Series, periods_per_year: int = TRADING_DAYS
 ) -> dict[str, float]:
@@ -67,8 +86,9 @@ def tracking(
     a fund that does not move. fund_return and clone_return are compound annual growth
     rates, and active_return is their difference: unlike the mean of fund minus clone it
     does not favour the more volatile of the two. log_gap is the annualised mean difference
-    of log returns and active_risk its annualised standard deviation; the t-statistic (and
-    report.interval) are built on them.
+    of log returns and active_risk its annualised standard deviation. log_gap_se is the
+    standard error of log_gap from the Newey-West long-run variance, which allows for gaps
+    that carry over from one period to the next; the t-statistic and report.interval use it.
     """
     data = pd.concat([fund.rename("fund"), clone.rename("clone")], axis=1, join="inner").dropna()
     active = data["fund"] - data["clone"]
@@ -80,6 +100,7 @@ def tracking(
     log_gap = float(gap.mean() * periods_per_year)
     spread = gap.std()
     active_risk = float(spread * np.sqrt(periods_per_year))
+    log_gap_se = float(np.sqrt(newey_west_variance(gap.to_numpy()) / len(gap)) * periods_per_year)
     flat = not data["fund"].var() > _FLAT
     return {
         "tracking_error": tracking_error,
@@ -90,11 +111,10 @@ def tracking(
         "active_return": fund_return - clone_return,
         "log_gap": log_gap,
         "active_risk": active_risk,
+        "log_gap_se": log_gap_se,
         "information_ratio": log_gap / active_risk if active_risk > 0 else float("nan"),
         # t-statistic of the mean return difference: is the gap more than noise?
-        "active_tstat": float(gap.mean() / spread * np.sqrt(len(gap)))
-        if spread > 0
-        else float("nan"),
+        "active_tstat": log_gap / log_gap_se if log_gap_se > _FLAT else float("nan"),
         "observations": len(active),
         "periods_per_year": periods_per_year,
     }

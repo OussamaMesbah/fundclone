@@ -109,3 +109,14 @@ def test_factsheet_details_are_shown_as_plain_text(app, monkeypatch):
     assert not app.exception
     shown = [m.value.replace("\\", "") for m in app.markdown if "evil" in m.value]
     assert shown and all("https://" not in text and "www." not in text for text in shown)
+
+
+def test_switching_shows_the_tax_and_how_long_it_takes_to_earn_it_back(app):
+    app.query_params["ticker"] = "FUND"  # the synthetic fund with an expense ratio
+    app.run()
+    widget(app.number_input, "Unrealised gain, % of the amount").set_value(40.0).run()
+    assert not app.exception
+    captions = [element.value for element in app.caption]
+    assert any("600 USD in tax" in text for text in captions)
+    assert any("years to earn back" in text for text in captions)
+    assert any("trades about" in text and "the 35% the fund reports" in text for text in captions)

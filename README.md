@@ -21,6 +21,9 @@ much of the fund you get from the clone and what the manager adds on top after f
 - **A clone you can buy.** Typically seven to ten liquid ETFs, their weights, whole-share
   orders for any amount, what the fees add up to and a CSV to take to your broker. Cap
   it at three or five ETFs if you prefer something simpler.
+- **What switching would cost.** The tax on gains you would realise by selling the fund,
+  how long the lower fees take to earn it back, a warning for share classes that charge a
+  sales load, and how much the clone trades against what the fund reports.
 - **An X-ray.** Fama-French factor exposures with Newey-West errors, how they drifted
   over time, and the single ETF that comes closest to the fund.
 
@@ -83,6 +86,13 @@ once with the final code:
 | **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **7.8** |
 | FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 4.6 |
 
+With 23 funds the median itself is uncertain: drawing the funds again and again with
+replacement (a bootstrap) puts it between 2.3% and 3.2% with 95% confidence. Compared fund
+by fund, the clone tracks 0.54 percentage points more closely in the median, with a 95%
+range of 0.25 to 1.31 points. The 81 ETFs were picked in 2026, with hindsight; limited to
+the 68 that were already trading in January 2009, a year before scoring starts, the median
+over all 64 funds stays at 2.91%.
+
 The clone tracks more closely than before on 22 of the 23 funds; the exception is an S&P
 500 index fund (0.60% before, 0.63% now). Plain least squares on the same 81 ETFs tracks
 about as closely (2.84%) but trades twice as much and holds 13 ETFs. On the 41
@@ -109,6 +119,15 @@ number are in [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/mast
 
 ## How it works
 
+FundClone builds on returns-based style analysis
+([Sharpe, 1992](https://web.stanford.edu/~wfsharpe/art/sa/sa.htm)): a fund's returns are
+explained by a long-only mix of asset-class returns. Sharpe fitted that mix once, over the
+whole history, to describe a fund's style. FundClone refits it every month from past data
+only, on ETFs you can buy, and measures out of sample, after trading costs, how closely the
+clone follows the fund and what the fund returns beyond it. Every step, with its parameters
+and references, is in
+[docs/method.md](https://github.com/OussamaMesbah/fundclone/blob/master/docs/method.md).
+
 1. **Building blocks.** 81 liquid US-listed ETFs: size and style, the eleven sectors, 16
    industries, factor ETFs, developed and emerging regions, 18 bond ETFs, REITs, gold and
    commodities. ETFs join once they have enough history.
@@ -121,7 +140,9 @@ number are in [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/mast
    sits in T-bills.
 4. **Honest measurement.** Tracking error, R² and the fund-minus-clone return are
    computed on weekly out-of-sample returns, and the return gap is the difference in
-   compound growth. Yahoo Finance sometimes repeats a mutual fund's previous price and
+   compound growth. Its 95% range uses a Newey-West standard error, which widens it when
+   a gap tends to carry over from one week to the next. The verdict also sets the fund
+   against the closest single ETF, the simplest alternative to it. Yahoo Finance sometimes repeats a mutual fund's previous price and
    catches up a day later, so a day on which the price did not change although the
    market moved enough to move it is merged with the next. For funds and ETFs, prices
    that jump and come back within days on a calm market are dropped as data errors, and
@@ -150,10 +171,11 @@ portfolio = run_analysis(mix, "2012-01-01", "2026-09-01", replication=three)
 
 ## Related tools
 
-Portfolio Visualizer offers factor regressions and manager performance analysis, and
-Interactive Brokers gives its clients a Mutual Fund Replicator that suggests ETFs in
-place of a mutual fund. FundClone differs in that every clone is tested out of sample
-with trading costs, and it is open source under the MIT license, benchmark included.
+Returns-based style analysis is a standard tool. Portfolio Visualizer offers it together
+with factor regressions and manager performance analysis, and Interactive Brokers gives
+its clients a Mutual Fund Replicator that suggests ETFs in place of a mutual fund.
+FundClone differs in that every clone is tested out of sample with trading costs, and it
+is open source under the MIT license, benchmark included.
 
 ## Limitations
 
@@ -166,6 +188,10 @@ with trading costs, and it is open source under the MIT license, benchmark inclu
   the ESMA screen.
 - Prices come from Yahoo Finance through yfinance. They have gaps and errors, and Yahoo's
   terms allow personal, non-commercial use only, so the repository ships no Yahoo data.
+  When Yahoo limits requests, FundClone waits, tries again and then says so.
+- Every figure follows the fund's net asset value: after its expense ratio, but before any
+  sales load and before tax. The app warns for share classes whose name implies a load, and
+  turns a load and your own tax situation into numbers, but it knows neither.
 - The Kenneth French factors lag by one to two months, and they are long/short paper
   portfolios: alpha against them is not a return you could have earned.
 - The closet-index screen applies thresholds from an [ESMA working paper](https://www.esma.europa.eu/sites/default/files/library/esmawp-2020-2_closet_indexing.pdf)
@@ -176,6 +202,9 @@ with trading costs, and it is open source under the MIT license, benchmark inclu
   harder, so failing the screen does not clear a fund.
 - Only funds that still exist can be analysed, so any comparison across funds favours
   the survivors.
+- The 81 ETFs were picked in 2026, and ETFs that have closed since are missing from it.
+  Limited to the 68 that already traded in January 2009, the benchmark's median tracking
+  error does not change, but closed ETFs cannot be tested.
 
 ## Roadmap
 

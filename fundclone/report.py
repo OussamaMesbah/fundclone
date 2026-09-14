@@ -9,8 +9,9 @@ from scipy import stats
 from fundclone.analysis import Analysis
 from fundclone.metrics import years_spanned
 
-# ESMA's returns-based screen for potential closet index funds (TRV No. 2, 2020): against
-# the benchmark, tracking error below 3%, R² above 95% and beta between 0.95 and 1.05.
+# The returns-based screen for potential closet index funds of an ESMA working paper
+# (Danieli, Harris and Pichini, ESMA Working Paper No. 2, 2020): against the benchmark,
+# tracking error below 3%, R² above 95% and beta between 0.95 and 1.05.
 ESMA_TRACKING_ERROR = 0.03
 ESMA_R_SQUARED = 0.95
 ESMA_BETA = (0.95, 1.05)
@@ -22,12 +23,12 @@ SHORT_SAMPLE_WEEKS = 52  # fewer out-of-sample weeks are too few to judge a fund
 def interval(tracking: dict[str, float]) -> tuple[float, float]:
     """95% confidence range of the fund-minus-clone difference in compound annual return.
 
-    The range is a Student's t interval for the mean log return gap, turned into a
-    difference of annual returns at the clone's growth rate.
+    The range is a Student's t interval for the mean log return gap with its Newey-West
+    standard error, which allows for gaps that carry over from one week to the next, turned
+    into a difference of annual returns at the clone's growth rate.
     """
     n = tracking["observations"]
-    years = n / tracking["periods_per_year"]
-    half = stats.t.ppf(0.975, max(n - 1, 1)) * tracking["active_risk"] / math.sqrt(years)
+    half = stats.t.ppf(0.975, max(n - 1, 1)) * tracking["log_gap_se"]
     base = 1 + tracking["clone_return"]
     return (
         base * math.expm1(tracking["log_gap"] - half),
@@ -118,8 +119,14 @@ def headline(a: Analysis) -> list[str]:
         f"clone after all fees; the 95% range is {_signed(low)} to {_signed(high)}, so the gap "
         f"is {evidence}."
     )
+    # The simplest alternative to the fund: one ETF. It is picked with hindsight, as the one
+    # that tracked best over these weeks, which flatters it rather than the fund.
+    alone = closest["active_return"]
+    alone_low, alone_high = interval(closest)
     lines.append(
         f"The closest single ETF, {a.closest_etf}, tracks with "
-        f"{closest['tracking_error']:.1%} tracking error."
+        f"{closest['tracking_error']:.1%} tracking error; against it alone, {inner} returned "
+        f"{abs(alone):.1%} a year {'more' if alone >= 0 else 'less'} (95% range "
+        f"{_signed(alone_low)} to {_signed(alone_high)})."
     )
     return lines

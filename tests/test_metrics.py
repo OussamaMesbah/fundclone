@@ -2,7 +2,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fundclone.metrics import benchmark_fit, drawdown, performance, tracking, years_spanned
+from fundclone.metrics import (
+    benchmark_fit,
+    drawdown,
+    newey_west_variance,
+    performance,
+    tracking,
+    years_spanned,
+)
 
 
 def test_benchmark_fit_recovers_beta_and_r_squared():
@@ -80,8 +87,30 @@ def test_tracking_of_a_noisy_clone():
     assert stats["active_return"] == stats["fund_return"] - stats["clone_return"]
     assert stats["log_gap"] == pytest.approx(gap.mean() * 252)
     assert stats["active_risk"] == pytest.approx(gap.std() * np.sqrt(252))
-    assert stats["active_tstat"] == pytest.approx(gap.mean() / gap.std() * np.sqrt(2000))
+    se = np.sqrt(newey_west_variance(gap.to_numpy()) / 2000) * 252
+    assert stats["log_gap_se"] == pytest.approx(se)
+    assert stats["active_tstat"] == pytest.approx(stats["log_gap"] / se)
     assert 0.6 < stats["r_squared"] < 0.9
+
+
+def test_newey_west_variance_without_lags_is_the_variance():
+    x = np.random.default_rng(2).normal(size=500)
+    assert newey_west_variance(x, lags=0) == pytest.approx(x.var())
+
+
+def test_the_standard_error_grows_when_gaps_carry_over_from_week_to_week():
+    rng = np.random.default_rng(3)
+    shocks = rng.normal(0, 0.002, 2000)
+    persistent = np.zeros(2000)
+    for i in range(1, 2000):
+        persistent[i] = 0.6 * persistent[i - 1] + shocks[i]
+    fund = pd.Series(rng.normal(0.001, 0.02, 2000))
+    # independent weeks: about the plain standard error; an AR(1) gap with 0.6 carry-over:
+    # close to twice it (the Bartlett weights recover most of the true factor of 2)
+    for gap, low, high in ((shocks, 0.85, 1.15), (persistent, 1.4, 2.2)):
+        stats = tracking(fund, fund - gap, 52)
+        plain_se = stats["active_risk"] / np.sqrt(2000 / 52)
+        assert low < stats["log_gap_se"] / plain_se < high
 
 
 def test_active_return_is_the_gap_in_compound_growth():

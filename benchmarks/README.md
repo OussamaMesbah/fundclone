@@ -58,6 +58,12 @@ Fresh set, 23 funds, run once:
 | **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **1.30** | **7.8** |
 | FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 1.54 | 4.6 |
 
+With this few funds the medians are uncertain. A bootstrap over the funds (10,000 draws,
+printed by `benchmarks.run`) puts the fresh median of 0.3 at 2.29% to 3.19% (95%) and the
+one before 0.3 at 3.09% to 4.37%. The two ranges overlap; fund by fund, though, 0.3 tracks
+more closely on 22 of the 23 funds, by 0.54 percentage points in the median (95% range
+0.25 to 1.31).
+
 Holdout half of the development set, 20 funds:
 
 | Version | Median tracking error | Mean tracking error | Median R² | Turnover | ETFs |
@@ -155,6 +161,27 @@ are three broad US index funds, where four ETFs already do a near-perfect job: V
 | ARKK | Sector | dev | 27.33% | 21.26% | 0.736 | 4.1 | 2.39 |
 | BRK-B | Single stock | holdout | 11.80% | 10.75% | 0.645 | 7.0 | 2.62 |
 
+## Is the list of ETFs chosen with hindsight?
+
+The 81 ETFs were picked in 2026 from those that are liquid today, a list nobody could have
+known in 2010. A clone never uses an ETF's prices before the ETF existed: an ETF joins only
+once it has a full estimation window. But the list leaves out ETFs that have closed since
+and favours those that became popular. As a check, the benchmark was rerun with only the
+68 ETFs that already traded on 2 January 2009, a year before scoring starts
+(`--universe traded-by:2009-01-02`). The 13 dropped are XLRE, XLC, MTUM, QUAL, USMV,
+VLUE, INDA, VCSH, VCIT, FLOT, BKLN, CWB and BNDX. On a snapshot of 14 September 2026,
+which reproduces the published medians:
+
+| ETFs | Median tracking error, 64 funds | Mean tracking error | Fresh set median |
+|---|---|---|---|
+| All 81 | 2.91% | 3.30% | 2.89% |
+| The 68 that traded by January 2009 | 2.91% | 3.33% | 2.88% |
+
+Fund by fund, the tracking error rises by 0.01 percentage points in the median (95% range
+0.00 to 0.03). The largest change is Fidelity Contrafund's, from 2.97% to 3.29%. Choosing
+the ETFs with hindsight therefore barely flatters the results. ETFs that have closed
+cannot be tested, because Yahoo Finance no longer has their prices.
+
 ## Why tracking error does not go much lower
 
 **Daily prices are noisy.** SPY and IVV, two ETFs that hold the same S&P 500 stocks,
@@ -229,6 +256,7 @@ python -m benchmarks.run --split dev,holdout --window 378 --estimator product   
 python -m benchmarks.run --split all --window 378 --estimator product --max-etfs 5
 python -m benchmarks.run --split all                                             # least squares, 81 ETFs
 python -m benchmarks.run --split all --universe legacy --raw                     # the baseline
+python -m benchmarks.run --split all --window 378 --estimator product --universe traded-by:2009-01-02
 ```
 
 Add `--out results.csv` to keep the per-fund rows. Yahoo revises its history now and
