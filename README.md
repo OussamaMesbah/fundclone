@@ -83,6 +83,13 @@ once with the final code:
 | **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **7.8** |
 | FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 4.6 |
 
+With 23 funds the median itself is uncertain: drawing the funds again and again with
+replacement (a bootstrap) puts it between 2.3% and 3.2% with 95% confidence. Compared fund
+by fund, the clone tracks 0.54 percentage points more closely in the median, with a 95%
+range of 0.25 to 1.31 points. The 81 ETFs were picked in 2026, with hindsight; limited to
+the 68 that were already trading in January 2009, a year before scoring starts, the median
+over all 64 funds stays at 2.91%.
+
 The clone tracks more closely than before on 22 of the 23 funds; the exception is an S&P
 500 index fund (0.60% before, 0.63% now). Plain least squares on the same 81 ETFs tracks
 about as closely (2.84%) but trades twice as much and holds 13 ETFs. On the 41
@@ -128,7 +135,9 @@ clone follows the fund and what the fund returns beyond it.
    sits in T-bills.
 4. **Honest measurement.** Tracking error, R² and the fund-minus-clone return are
    computed on weekly out-of-sample returns, and the return gap is the difference in
-   compound growth. Yahoo Finance sometimes repeats a mutual fund's previous price and
+   compound growth. Its 95% range uses a Newey-West standard error, which widens it when
+   a gap tends to carry over from one week to the next. The verdict also sets the fund
+   against the closest single ETF, the simplest alternative to it. Yahoo Finance sometimes repeats a mutual fund's previous price and
    catches up a day later, so a day on which the price did not change although the
    market moved enough to move it is merged with the next. For funds and ETFs, prices
    that jump and come back within days on a calm market are dropped as data errors, and
@@ -184,6 +193,9 @@ is open source under the MIT license, benchmark included.
   harder, so failing the screen does not clear a fund.
 - Only funds that still exist can be analysed, so any comparison across funds favours
   the survivors.
+- The 81 ETFs were picked in 2026, and ETFs that have closed since are missing from it.
+  Limited to the 68 that already traded in January 2009, the benchmark's median tracking
+  error does not change, but closed ETFs cannot be tested.
 
 ## Roadmap
 

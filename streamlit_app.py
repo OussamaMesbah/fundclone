@@ -119,7 +119,11 @@ data errors, and unadjusted splits are corrected.
 its expense ratio, the ETFs' prices net of theirs, and the clone pays trading costs on
 top. The gap is the difference in compound annual growth. If its 95% range lies above
 zero, the manager added something cheap ETFs could not. A range that straddles zero
-means the difference is within the noise.
+means the difference is within the noise. The range uses a Newey-West standard error,
+which widens it when a gap tends to carry over from one week to the next. The verdict
+also sets the fund against the closest single ETF, the simplest alternative to it. That
+ETF is picked with hindsight, as the one that tracked best, which flatters the ETF rather
+than the fund.
 
 **Closet index screen.** For equity funds with a year or more of out-of-sample returns,
 FundClone applies the three returns-based thresholds of an ESMA working paper on potential

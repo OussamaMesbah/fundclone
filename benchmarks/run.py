@@ -84,12 +84,23 @@ def checked(estimator):
     return estimate
 
 
-def universe_for(name: str, legacy: str) -> list[str]:
-    """ "legacy" (the fund's old hand-picked set), "all" (every ETF) or a comma list."""
+def universe_for(name: str, legacy: str, prices: pd.DataFrame | None = None) -> list[str]:
+    """ "legacy" (the fund's old hand-picked set), "all" (every ETF), "traded-by:DATE" (every
+    ETF with a price on or before DATE, the list an investor could have known then) or a
+    comma list."""
     if name == "legacy":
         return LEGACY[legacy]
     if name == "all":
         return etfs.tickers()
+    if name.startswith("traded-by:"):
+        date = pd.Timestamp(name.partition(":")[2])
+        return [
+            ticker
+            for ticker in etfs.tickers()
+            if prices is not None
+            and ticker in prices
+            and prices[ticker].first_valid_index() <= date
+        ]
     return [ticker.strip() for ticker in name.split(",")]
 
 
@@ -115,7 +126,7 @@ def evaluate(fund: dict, universe: str) -> dict:
     try:
         assets = [
             t
-            for t in universe_for(universe, fund["legacy_universe"])
+            for t in universe_for(universe, fund["legacy_universe"], prices)
             if t in prices and t != ticker
         ]
         fund_prices = prices[ticker].dropna()
@@ -160,6 +171,16 @@ def evaluate(fund: dict, universe: str) -> dict:
     return row
 
 
+def median_range(values, draws: int = 10_000, seed: int = 0) -> tuple[float, float]:
+    """95% bootstrap range of the median: the funds are drawn with replacement and the
+    2.5th and 97.5th percentiles of the resulting medians taken. With a few dozen funds the
+    median itself is uncertain by a few tenths of a percentage point."""
+    x = np.asarray(values, dtype=float)
+    rng = np.random.default_rng(seed)
+    medians = np.median(rng.choice(x, size=(draws, len(x)), replace=True), axis=1)
+    return float(np.percentile(medians, 2.5)), float(np.percentile(medians, 97.5))
+
+
 def summarise(results: pd.DataFrame) -> str:
     ok = results[results["error"] == ""]
     lines = []
@@ -170,8 +191,10 @@ def summarise(results: pd.DataFrame) -> str:
     lines.append(table.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     by_category = ok.groupby("category")[["te_weekly", "r2_weekly"]].median()
     lines.append("\nMedian by category:\n" + by_category.to_string(float_format="{:.3f}".format))
+    low, high = median_range(ok["te_weekly"])
     lines.append(
-        f"\nfunds {len(ok)}/{len(results)} | median TE weekly {ok['te_weekly'].median():.4f} | "
+        f"\nfunds {len(ok)}/{len(results)} | median TE weekly {ok['te_weekly'].median():.4f} "
+        f"(95% range {low:.4f} to {high:.4f}) | "
         f"mean TE weekly {ok['te_weekly'].mean():.4f} | median TE daily "
         f"{ok['tracking_error'].median():.4f} | median R² weekly {ok['r2_weekly'].median():.3f} | "
         f"median turnover {ok['turnover'].median():.2f} | "
@@ -190,7 +213,9 @@ def main(argv: list[str] | None = None) -> None:
         "--split", default="dev", help=f'"all" or a comma-separated list of: {", ".join(SPLITS)}'
     )
     parser.add_argument("--funds", help="comma-separated tickers; overrides --split")
-    parser.add_argument("--universe", default="all", help='"all", "legacy" or a comma list')
+    parser.add_argument(
+        "--universe", default="all", help='"all", "legacy", "traded-by:DATE" or a comma list'
+    )
     parser.add_argument("--estimator", help="path/to/file.py:function")
     parser.add_argument("--window", type=int, default=252)
     parser.add_argument("--rebalance", choices=["M", "Q"], default="M")
