@@ -21,6 +21,9 @@ much of the fund you get from the clone and what the manager adds on top after f
 - **A clone you can buy.** Typically seven to ten liquid ETFs, their weights, whole-share
   orders for any amount, what the fees add up to and a CSV to take to your broker. Cap
   it at three or five ETFs if you prefer something simpler.
+- **What switching would cost.** The tax on gains you would realise by selling the fund,
+  how long the lower fees take to earn it back, a warning for share classes that charge a
+  sales load, and how much the clone trades against what the fund reports.
 - **An X-ray.** Fama-French factor exposures with Newey-West errors, how they drifted
   over time, and the single ETF that comes closest to the fund.
 
@@ -183,6 +186,9 @@ is open source under the MIT license, benchmark included.
   the ESMA screen.
 - Prices come from Yahoo Finance through yfinance. They have gaps and errors, and Yahoo's
   terms allow personal, non-commercial use only, so the repository ships no Yahoo data.
+- Every figure follows the fund's net asset value: after its expense ratio, but before any
+  sales load and before tax. The app warns for share classes whose name implies a load, and
+  turns a load and your own tax situation into numbers, but it knows neither.
 - The Kenneth French factors lag by one to two months, and they are long/short paper
   portfolios: alpha against them is not a return you could have earned.
 - The closet-index screen applies thresholds from an [ESMA working paper](https://www.esma.europa.eu/sites/default/files/library/esmawp-2020-2_closet_indexing.pdf)

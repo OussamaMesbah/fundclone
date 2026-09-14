@@ -28,6 +28,7 @@ CACHE_DIR = Path(os.environ.get("FUNDCLONE_CACHE", Path.home() / ".cache" / "fun
 PRICE_MAX_AGE = 12 * 3600  # seconds
 FRENCH_MAX_AGE = 24 * 3600
 INFO_MAX_AGE = 7 * 24 * 3600
+INFO_FIELDS = frozenset({"name", "currency", "timezone", "quote_type", "expense_ratio", "turnover"})
 # Files per kind of cache, enough for the benchmark's ETFs and funds several times over.
 # Tickers come from users, so without a limit the cache could fill the disk.
 MAX_CACHE_FILES = 1000
@@ -270,26 +271,28 @@ def _download_closes(tickers: list[str]) -> dict[str, pd.Series]:
 
 
 def fetch_info(ticker: str) -> dict:
-    """Name, currency, exchange time zone, quote type and net expense ratio (decimal) of a
-    Yahoo Finance symbol.
+    """Name, currency, exchange time zone, quote type, net expense ratio (decimal) and
+    reported holdings turnover of a Yahoo Finance symbol.
 
     Values Yahoo does not report are None. Cached for a week.
     """
     path = _cache_file("info", ticker, ".json")
     cached = _cached(path, INFO_MAX_AGE, lambda p: json.loads(p.read_text()))
-    if isinstance(cached, dict):
-        return cached
+    if isinstance(cached, dict) and INFO_FIELDS <= cached.keys():
+        return cached  # an older cache without every field is fetched again
     try:
         raw = yf.Ticker(ticker).info or {}
     except Exception:  # unknown symbols and rate limits surface as assorted errors
         raw = {}
     ratio = raw.get("netExpenseRatio")
+    turnover = raw.get("annualHoldingsTurnover")
     info = {
         "name": raw.get("longName") or raw.get("shortName"),
         "currency": raw.get("currency"),
         "timezone": raw.get("exchangeTimezoneName"),
         "quote_type": raw.get("quoteType"),
         "expense_ratio": float(ratio) / 100 if ratio is not None else None,
+        "turnover": float(turnover) if turnover is not None else None,
     }
     for key in ("currency", "timezone"):
         if info[key] is None:

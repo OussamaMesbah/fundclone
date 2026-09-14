@@ -158,6 +158,7 @@ def test_damaged_info_cache_is_fetched_again(tmp_path, monkeypatch):
         "exchangeTimezoneName": "America/New_York",
         "quoteType": "MUTUALFUND",
         "netExpenseRatio": 0.59,
+        "annualHoldingsTurnover": 0.32,
     }
     monkeypatch.setattr(data.yf, "Ticker", lambda ticker: SimpleNamespace(info=raw, fast_info={}))
     info = data.fetch_info("AAA")
@@ -167,8 +168,20 @@ def test_damaged_info_cache_is_fetched_again(tmp_path, monkeypatch):
         "timezone": "America/New_York",
         "quote_type": "MUTUALFUND",
         "expense_ratio": pytest.approx(0.0059),
+        "turnover": pytest.approx(0.32),
     }
     assert json.loads(path.read_text())["name"] == "AAA Fund"
+
+
+def test_a_cache_written_before_a_field_existed_is_fetched_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    path = data._cache_file("info", "AAA", ".json")
+    path.parent.mkdir(parents=True)
+    old = {"name": "AAA Fund", "currency": "USD", "timezone": None, "quote_type": "MUTUALFUND"}
+    path.write_text(json.dumps(old | {"expense_ratio": 0.0059}))  # no "turnover" yet
+    raw = {"longName": "AAA Fund", "annualHoldingsTurnover": 0.32}
+    monkeypatch.setattr(data.yf, "Ticker", lambda ticker: SimpleNamespace(info=raw, fast_info={}))
+    assert data.fetch_info("AAA")["turnover"] == pytest.approx(0.32)
 
 
 def market_moves(n: int, seed: int) -> tuple[pd.DatetimeIndex, np.ndarray, pd.DataFrame]:
