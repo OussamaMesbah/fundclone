@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fundclone"
-version = "0.5.0.dev0"
+version = "0.5.0"
 description = "Clone any fund or portfolio with a handful of low-cost ETFs, out of sample"
 readme = "README.md"
 license = "MIT"

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.0 (2026-09-14)
+
+Answers to the points a critical reader would raise, and UCITS building blocks for
+investors in the EU. How clones are estimated is unchanged, so the benchmark results of
+0.3.0 still hold; the verdict's 95% ranges now allow for gaps that carry over from week to
+week.
+
 ### Added
 - UCITS building blocks for investors in the EU: 47 UCITS ETFs and a gold ETC on Xetra with
   ISINs and total expense ratios, chosen as the ETF set in the app (`?set=UCITS`), on the
