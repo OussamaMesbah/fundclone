@@ -71,6 +71,7 @@ DISCLAIMER = (
 ESMA_PAPER = (
     "https://www.esma.europa.eu/sites/default/files/library/esmawp-2020-2_closet_indexing.pdf"
 )
+SHARPE_PAPER = "https://web.stanford.edu/~wfsharpe/art/sa/sa.htm"
 _MARKDOWN = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$:])")
 _AUTOLINK = re.compile(r"(?i)(https?|www)(?=[:.])|(@)")
 
@@ -96,6 +97,12 @@ estimator came out of an out-of-sample comparison of seven approaches on 41 fund
 median tracking errors differed by at most 0.15 percentage points; compared with plain
 least squares it trades about half as much for about the same tracking error (see the
 benchmark in the repository).
+
+**Where it comes from.** The clone is returns-based style analysis
+([Sharpe, 1992]({SHARPE_PAPER})), which explains a fund's returns by a long-only mix of
+asset-class returns. Sharpe fitted the mix once, over the whole history, to describe a
+fund's style. FundClone refits it every month from past data only, on ETFs you can buy,
+so the clone is one you could have held in real time.
 
 **Out of sample, always.** The clone's weights on any day come only from data before
 that day. Tracking error, R² and the fund-minus-clone return are measured on these

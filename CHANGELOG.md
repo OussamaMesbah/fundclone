@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+- The README and the app's Method tab credit returns-based style analysis (Sharpe, 1992),
+  on which the clone builds, and say what FundClone adds to it: monthly refits from past
+  data only, ETFs you can buy, and out-of-sample measurement after trading costs.
+
 ## 0.4.0 (2026-09-11)
 
 Security hardening and a setup for outside contributors. How clones are estimated and

@@ -109,6 +109,13 @@ number are in [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/mast
 
 ## How it works
 
+FundClone builds on returns-based style analysis
+([Sharpe, 1992](https://web.stanford.edu/~wfsharpe/art/sa/sa.htm)): a fund's returns are
+explained by a long-only mix of asset-class returns. Sharpe fitted that mix once, over the
+whole history, to describe a fund's style. FundClone refits it every month from past data
+only, on ETFs you can buy, and measures out of sample, after trading costs, how closely the
+clone follows the fund and what the fund returns beyond it.
+
 1. **Building blocks.** 81 liquid US-listed ETFs: size and style, the eleven sectors, 16
    industries, factor ETFs, developed and emerging regions, 18 bond ETFs, REITs, gold and
    commodities. ETFs join once they have enough history.
@@ -150,10 +157,11 @@ portfolio = run_analysis(mix, "2012-01-01", "2026-09-01", replication=three)
 
 ## Related tools
 
-Portfolio Visualizer offers factor regressions and manager performance analysis, and
-Interactive Brokers gives its clients a Mutual Fund Replicator that suggests ETFs in
-place of a mutual fund. FundClone differs in that every clone is tested out of sample
-with trading costs, and it is open source under the MIT license, benchmark included.
+Returns-based style analysis is a standard tool. Portfolio Visualizer offers it together
+with factor regressions and manager performance analysis, and Interactive Brokers gives
+its clients a Mutual Fund Replicator that suggests ETFs in place of a mutual fund.
+FundClone differs in that every clone is tested out of sample with trading costs, and it
+is open source under the MIT license, benchmark included.
 
 ## Limitations
 
