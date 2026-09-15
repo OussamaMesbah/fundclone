@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.6.0 (2026-09-15)
+
+A second, critical pass before launch. The clone is now fitted on overlapping three-day
+returns, which gives it the right amount of risk, so every benchmark number was rescored;
+the credit to Sharpe (1992), the switching calculator and several data checks were
+corrected; and investors in the EU get UCITS twins of the US-listed ETFs.
+
 ### Added
 - UCITS twins: for 64 of the 81 US-listed ETFs, a UCITS ETF that investors in the EU can
   buy in its place, following the same index (30), the same index capped differently (18)
