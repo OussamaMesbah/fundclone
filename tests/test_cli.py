@@ -30,6 +30,8 @@ def test_an_input_error_ends_with_a_message_not_a_traceback(monkeypatch, capsys)
         ["AGTHX", "--start", "2026-01-01", "--end", "2025-01-01"],
         ["AGTHX", "--start", "01/01/2020"],
         ["AGTHX", "--asset-classes", "stocks"],
+        ["AGTHX", "--expense-ratio", "12"],
+        ["AGTHX", "--expense-ratio", "abc"],
     ],
 )
 def test_invalid_arguments_are_rejected(args):
@@ -71,3 +73,22 @@ def test_asset_classes_are_those_of_the_chosen_etf_set():
     ]
     with pytest.raises(SystemExit):
         _asset_classes(parser, "US equity", "UCITS")
+
+
+def test_an_expense_ratio_is_given_in_percent(monkeypatch):
+    seen = {}
+
+    def capture(target, start, end, **kwargs):
+        seen.update(kwargs)
+        raise ValueError("stop")
+
+    monkeypatch.setattr(cli, "run_analysis", capture)
+    with pytest.raises(SystemExit):
+        cli.main(["FUND", "--expense-ratio", "1.5"])
+    assert seen["expense_ratio"] == pytest.approx(0.015)
+
+
+def test_the_ucits_twins_can_be_listed(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "run_analysis", lambda target, *args, **kwargs: analyse(target))
+    cli.main(["FUND", "--ucits-twins"])
+    assert "UCITS twins for investors in the EU" in capsys.readouterr().out

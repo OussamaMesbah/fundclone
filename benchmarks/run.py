@@ -30,14 +30,17 @@ from fundclone.data import (
     compounded_rate,
     daily_returns,
     drop_price_errors,
+    drop_reversed_moves,
     drop_stale_prices,
     fx_ticker,
     to_usd,
+    unadjusted_distribution,
     weekly_returns,
 )
 from fundclone.estimators import make_estimator
 from fundclone.metrics import WEEKS_PER_YEAR, tracking, years_spanned
 from fundclone.replication import ReplicationConfig, constrained_least_squares, walk_forward
+from fundclone.report import interval
 
 FUNDS_FILE = Path(__file__).with_name("funds.csv")
 DATA_DIR = Path(__file__).with_name("data")  # where benchmarks.download puts the snapshot
@@ -119,6 +122,7 @@ def _init(
     clean: bool,
     etf_set: str = etfs.DEFAULT_SET,
     eval_start: pd.Timestamp = EVAL_START,
+    eval_end: pd.Timestamp | None = None,
 ):
     prices = etfs.without_known_errors(pd.read_parquet(prices_path))
     for etf in etfs.ETFS:  # ETFs quoted in another currency, such as UCITS ETFs in EUR
@@ -128,6 +132,7 @@ def _init(
     _state["prices"] = prices[prices.index >= DATA_START]
     _state["etf_set"] = etf_set
     _state["eval_start"] = pd.Timestamp(eval_start)
+    _state["eval_end"] = pd.Timestamp(eval_end) if eval_end else None
     _state["rf"] = pd.read_csv(rf_path, index_col=0, parse_dates=True).iloc[:, 0]
     _state["estimator"] = checked(load_estimator(estimator))
     _state["config"] = config
@@ -149,10 +154,13 @@ def evaluate(fund: dict, universe: str) -> dict:
             market = daily_returns(prices[assets].ffill().reindex(fund_prices.index))
             stock = fund["category"] == "Single stock"  # the app checks funds and ETFs only
             if not stock:
-                fund_prices = drop_price_errors(fund_prices, market)
+                checked = drop_price_errors(fund_prices, market)
+                fund_prices = drop_reversed_moves(checked, prices[assets])
             fund_prices = drop_stale_prices(fund_prices, market)
             if not stock:
                 fund_prices = adjust_splits(fund_prices, market)[0]
+                if found := unadjusted_distribution(fund_prices, prices[assets]):
+                    fund_prices = fund_prices[fund_prices.index < found[0]]
         fund_returns = daily_returns(fund_prices)
         etf_returns = daily_returns(prices[assets].ffill().reindex(fund_prices.index))
         rf_daily = compounded_rate(rf, fund_prices.index).reindex(fund_returns.index)
@@ -164,19 +172,39 @@ def evaluate(fund: dict, universe: str) -> dict:
             raise ValueError(
                 f"clone starts {result.returns.index[0]:%Y-%m-%d}, after {start:%Y-%m-%d}"
             )
-        clone = result.returns[result.returns.index >= start]
+        end = _state["eval_end"] or result.returns.index[-1]
+        clone = result.returns[(result.returns.index >= start) & (result.returns.index <= end)]
         pair = pd.DataFrame({"fund": fund_returns.reindex(clone.index), "clone": clone})
         weekly = weekly_returns(pair)
         monthly = (1 + pair).resample("ME").prod() - 1
-        weights = result.weights[result.weights.index >= start]
+        weights = result.weights[(result.weights.index >= start) & (result.weights.index <= end)]
         years = years_spanned(clone.index)  # calendar years: merged stale days still count
+        trades = (result.turnover.index >= start) & (result.turnover.index <= end)
+        # The simplest alternative, as in the app's verdict: the single ETF that tracked the
+        # fund best over the scored weeks, chosen with hindsight.
+        singles = weekly_returns(etf_returns.reindex(clone.index).dropna(axis=1))
+        closest = str(singles.sub(weekly["fund"], axis=0).std().idxmin())
+        versus_clone = tracking(weekly["fund"], weekly["clone"], WEEKS_PER_YEAR)
+        versus_closest = tracking(weekly["fund"], singles[closest], WEEKS_PER_YEAR)
+        gap_low, gap_high = interval(versus_clone)
+        closest_low, closest_high = interval(versus_closest)
         row.update(tracking(pair["fund"], pair["clone"]))
         row.update(
-            te_weekly=tracking(weekly["fund"], weekly["clone"], WEEKS_PER_YEAR)["tracking_error"],
-            r2_weekly=tracking(weekly["fund"], weekly["clone"], WEEKS_PER_YEAR)["r_squared"],
+            te_weekly=versus_clone["tracking_error"],
+            r2_weekly=versus_clone["r_squared"],
             te_monthly=float((monthly["fund"] - monthly["clone"]).std() * np.sqrt(12)),
-            turnover=float(result.turnover[result.turnover.index >= start].sum() / years),
+            turnover=float(result.turnover[trades].sum() / years),
+            realised=float(result.realised[trades].sum() / years),
             holdings=float((weights.abs() > 0.01).sum(axis=1).mean()),
+            gap=versus_clone["active_return"],
+            gap_low=gap_low,
+            gap_high=gap_high,
+            closest=closest,
+            te_closest=versus_closest["tracking_error"],
+            r2_closest=versus_closest["r_squared"],
+            gap_closest=versus_closest["active_return"],
+            gap_closest_low=closest_low,
+            gap_closest_high=closest_high,
             start=f"{clone.index[0]:%Y-%m-%d}",
             end=f"{clone.index[-1]:%Y-%m-%d}",
             error="",
@@ -196,12 +224,33 @@ def median_range(values, draws: int = 10_000, seed: int = 0) -> tuple[float, flo
     return float(np.percentile(medians, 2.5)), float(np.percentile(medians, 97.5))
 
 
+PASSIVE = ("Index", "Single stock")  # categories left out of the tally of active funds
+
+
+def verdicts(ok: pd.DataFrame) -> str:
+    """How the actively managed funds fared after all fees, against their clone and against
+    the closest single ETF: how many came out ahead, and how many were ahead or behind by
+    more than noise, meaning that the 95% range of the gap excludes zero."""
+    active = ok[~ok["category"].isin(PASSIVE)]
+    lines = [f"\n{len(active)} active funds, after all fees:"]
+    for name, gap in (("clone", "gap"), ("closest single ETF", "gap_closest")):
+        lines.append(
+            f"  against the {name}: ahead {int((active[gap] > 0).sum())}, by more than noise "
+            f"{int((active[f'{gap}_low'] > 0).sum())}; behind by more than noise "
+            f"{int((active[f'{gap}_high'] < 0).sum())}; median gap {active[gap].median():+.2%}"
+        )
+    return "\n".join(lines)
+
+
 def summarise(results: pd.DataFrame) -> str:
     ok = results[results["error"] == ""]
     lines = []
     for _, row in results[results["error"] != ""].iterrows():
         lines.append(f"FAILED {row['ticker']}: {row['error']}")
-    columns = ["tracking_error", "te_weekly", "te_monthly", "r2_weekly", "turnover", "holdings"]
+    columns = [
+        *("tracking_error", "te_weekly", "te_monthly", "r2_weekly", "turnover", "holdings"),
+        *("te_closest", "gap"),
+    ]
     table = ok[["ticker", "category", *columns]]
     lines.append(table.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     by_category = ok.groupby("category")[["te_weekly", "r2_weekly"]].median()
@@ -213,8 +262,10 @@ def summarise(results: pd.DataFrame) -> str:
         f"mean TE weekly {ok['te_weekly'].mean():.4f} | median TE daily "
         f"{ok['tracking_error'].median():.4f} | median R² weekly {ok['r2_weekly'].median():.3f} | "
         f"median turnover {ok['turnover'].median():.2f} | "
-        f"median holdings {ok['holdings'].median():.1f}"
+        f"median holdings {ok['holdings'].median():.1f} | "
+        f"median TE weekly of the closest single ETF {ok['te_closest'].median():.4f}"
     )
+    lines.append(verdicts(ok))
     return "\n".join(lines)
 
 
@@ -237,6 +288,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--eval-start", default=EVAL_START, help="first date scored (default 2010-01-04)"
     )
+    parser.add_argument("--eval-end", help="last date scored (default: the end of the data)")
     parser.add_argument("--estimator", help="path/to/file.py:function")
     parser.add_argument("--window", type=int, default=252)
     parser.add_argument("--rebalance", choices=["M", "Q"], default="M")
@@ -244,7 +296,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--cost-bps", type=float, default=5.0)
     parser.add_argument("--max-etfs", type=int, help="cap on the number of ETFs")
     parser.add_argument("--min-weight", type=float, default=0.02, help="smallest position kept")
-    parser.add_argument("--overlap", type=int, default=1, help="fit on overlapping n-day sums")
+    parser.add_argument(
+        "--overlap",
+        type=int,
+        default=ReplicationConfig().overlap,
+        help="fit on overlapping n-day sums (default: the app's)",
+    )
     parser.add_argument("--raw", action="store_true", help="keep stale fund prices")
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--out", help="write per-fund results to this CSV")
@@ -280,6 +337,7 @@ def main(argv: list[str] | None = None) -> None:
         not args.raw,
         args.etf_set,
         args.eval_start,
+        args.eval_end,
     )
     with ProcessPoolExecutor(args.jobs, initializer=_init, initargs=initargs) as pool:
         rows = list(pool.map(evaluate, records, [args.universe] * len(records)))

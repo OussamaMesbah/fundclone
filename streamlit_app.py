@@ -25,6 +25,7 @@ from fundclone.data import (
     fetch_info,
     fetch_prices,
     load_french_factors,
+    usable,
     yahoo_symbols,
 )
 from fundclone.factsheet import parse_factsheet_safely
@@ -53,9 +54,11 @@ TODAY = dt.date.today()
 WINDOW = (63, 756, 21)  # slider range and step, trading days
 ROLLING = (24, 60, 6)  # months
 FEE_GROWTH = 0.06  # yearly growth before fees assumed when adding up fees over a horizon
+MAX_FEE = 9.99  # the highest expense ratio, in percent, that can be entered or linked
 DEFAULTS = {
     "mode": "Fund",
     "target": "AGTHX",
+    "expense_ratio": None,  # percent a year, for funds Yahoo Finance reports none for
     "start": "2005-01-01",
     "end": TODAY.isoformat(),
     "max_etfs": None,
@@ -94,10 +97,12 @@ def plain(text) -> str:
 
 
 METHOD = f"""
-**The clone.** At the end of every month FundClone looks at the fund's daily returns
-over the past 18 months and finds the long-only mix of {len(etfs.tickers())} liquid US-listed
-ETFs (size and style, sectors, industries, factors, regions, bonds, gold, commodities)
-that would have followed it most closely. Recent days count more (a 63-day half-life),
+**The clone.** At the end of every month FundClone looks at the fund's returns over the
+past 18 months, summed over overlapping three-day spans, and finds the long-only mix of
+{len(etfs.tickers())} liquid US-listed ETFs (size and style, sectors, industries, factors,
+regions, bonds, gold, commodities) that would have followed it most closely. Three-day
+spans keep fund prices that follow the market a little late from making the clone too
+cautious. Recent days count more (a 63-day half-life),
 weights the data cannot tell apart stay close to last month's, and positions below 2%
 are dropped. The mix is bought the next trading day and held, drifting with prices,
 until the next month. What is not invested sits in T-bills. Every trade pays a trading
@@ -109,9 +114,10 @@ benchmark in the repository).
 
 **Where it comes from.** The clone is returns-based style analysis
 ([Sharpe, 1992]({SHARPE_PAPER})), which explains a fund's returns by a long-only mix of
-asset-class returns. Sharpe fitted the mix once, over the whole history, to describe a
-fund's style. FundClone refits it every month from past data only, on ETFs you can buy,
-so the clone is one you could have held in real time.
+asset-class returns. To judge performance, Sharpe re-estimated the mix every month from
+the previous 60 months, so each month's benchmark used only earlier data. FundClone does
+the same with ETFs you can buy, on daily returns and with trading costs, so the clone is
+one you could have held in real time.
 
 **Out of sample, always.** The clone's weights on any day come only from data before
 that day. Tracking error, R² and the fund-minus-clone return are measured on these
@@ -122,7 +128,10 @@ year on daily returns and by half that on weekly returns, and some daily mutual 
 prices on Yahoo Finance are stale. Before fitting, a day on which the fund's price did not
 change although the market moved enough to move it is merged with the next day. For funds
 and ETFs, prices that jump and come back within days on a calm market are left out as
-data errors, and unadjusted splits are corrected.
+data errors, and so are prices that break away from the closest ETF and come back within
+two days, as when Yahoo books a distribution a day late. Unadjusted splits are corrected,
+and the figures end before a recent drop that looks like a distribution Yahoo has not
+adjusted for yet.
 
 **Fund minus clone.** Both return series are after fees: the fund's prices are net of
 its expense ratio, the ETFs' prices net of theirs, and the clone pays trading costs on
@@ -148,9 +157,11 @@ expected.
 
 **What the figures leave out.** The fund's returns follow its net asset value: after its
 expense ratio, but before any sales load and before tax. Where a share class name implies
-a load, the verdict says so. Under the clone, "Switching from the fund" turns a load, the
-gains you would realise and your tax rate into numbers, and compares how much the clone
-trades with what the fund reports.
+a load, the verdict says so. Under the clone, "Switching from the fund" turns a deferred
+sales charge, the gains you would realise and your tax rate into the cost of selling now,
+and sets it against the lower fees. A front-end load already paid is gone either way, so
+it counts only for new money. The section also compares how much the clone trades with
+what the fund reports.
 
 **Factor exposures.** A second, academic view regresses the fund's monthly excess returns
 on the Fama-French five factors and momentum, with term and credit factors for funds
@@ -162,6 +173,12 @@ converted to USD, and a few known errors in Yahoo's Xetra prices are left out. T
 funds priced in European hours. For funds priced in US hours, Xetra's close four and a
 half hours earlier adds timing noise to the weekly figures, so the US-listed ETFs give the
 truer picture there.
+
+**UCITS twins.** For a clone of US-listed ETFs, the Clone tab can list, for each ETF, a
+UCITS ETF that investors in the EU can buy in its place: one that follows the same index,
+sometimes capped differently, or a similar one, with its ISIN and total expense ratio from
+justETF. 64 of the {len(etfs.tickers())} ETFs have one. The clone itself is fitted and
+scored with the US-listed ETFs; a clone built from the twins was not tested.
 
 **Data.** Prices and fund expense ratios from Yahoo Finance; factors and the T-bill rate
 from the Kenneth French data library, which lags by one to two months. ETF expense
@@ -221,10 +238,22 @@ info_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(fetch_
 symbols_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(yahoo_symbols)
 
 
+def info_or_snapshot(ticker: str) -> dict:
+    """A symbol's details from Yahoo Finance or, while Yahoo limits requests for a symbol
+    the local snapshot has prices for, none, so that the snapshot can still be used."""
+    try:
+        return info_cached(ticker)
+    except YahooRateLimitError:
+        if ticker in snapshot():
+            return {}
+        raise
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
 def analyse(
     mode,
     target,
+    expense_ratio,
     start,
     end,
     max_etfs,
@@ -257,9 +286,10 @@ def analyse(
         region=region,
         use_bond_factors=bond_factors,
         rolling_window=rolling_window,
+        expense_ratio=None if expense_ratio is None else expense_ratio / 100,
         price_loader=prices_cached,
         factor_loader=factors_cached,
-        info_loader=info_cached,
+        info_loader=info_or_snapshot,
     )
 
 
@@ -326,6 +356,13 @@ def _cost(text: str) -> float:
     return value
 
 
+def _fee(text: str) -> float:
+    value = float(text)
+    if not 0 <= value <= MAX_FEE:
+        raise ValueError(text)
+    return value
+
+
 def _yes_no(text: str) -> bool:
     if text not in ("yes", "no"):
         raise ValueError(text)
@@ -336,6 +373,7 @@ def _yes_no(text: str) -> bool:
 LINK = {
     "start": ("start", _date),
     "end": ("end", _date),
+    "ter": ("expense_ratio", _fee),
     "etfs": ("max_etfs", _cap),
     "set": ("etf_set", _choice(*etfs.SETS)),
     "blocks": ("asset_classes", _blocks),
@@ -422,12 +460,25 @@ def settings_form(initial: dict) -> dict | None:
                 help="Yahoo Finance symbol of a mutual fund, ETF or stock, e.g. AGTHX or EXS1.DE.",
             )
             st.caption("Try " + ", ".join(EXAMPLES))
+            expense_ratio = st.number_input(
+                "Expense ratio, % a year (optional)",
+                min_value=0.0,
+                max_value=MAX_FEE,
+                value=initial["expense_ratio"] if initial["mode"] == "Fund" else None,
+                key=f"expense-ratio-{initial['target']}",  # a new fund starts empty
+                step=0.05,
+                format="%.2f",
+                placeholder="from Yahoo Finance",
+                help="Only needed when Yahoo Finance reports none, as for many European funds, "
+                "or an outdated one. The fund's KID or factsheet lists it.",
+            )
         else:
             target = st.text_area(
                 "Holdings",
                 initial["target"] if initial["mode"] == "Portfolio" else EXAMPLE_PORTFOLIO,
                 help="Ticker and weight per entry, separated by commas or new lines.",
             )
+            expense_ratio = None
         left, right = st.columns(2)
         start = left.date_input(
             "Start",
@@ -498,9 +549,13 @@ def settings_form(initial: dict) -> dict | None:
             )
         if not st.form_submit_button("Build the clone", type="primary", width="stretch"):
             return None
+    new_fund = target.strip().upper() != initial["target"].strip().upper()
+    if new_fund and expense_ratio is not None and expense_ratio == initial["expense_ratio"]:
+        expense_ratio = None  # entered for the fund analysed before, not for this one
     return {
         "mode": mode,
         "target": target.strip(),
+        "expense_ratio": expense_ratio,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "max_etfs": MAX_ETFS[max_etfs],
@@ -521,6 +576,9 @@ def show_symbols(isin: str) -> None:
     """The Yahoo Finance symbols listed for an ISIN, as candidates to check."""
     try:
         found = [quote for quote in symbols_cached(isin) if is_ticker(quote["symbol"])]
+    except YahooRateLimitError:  # not cached, so the next try asks Yahoo again
+        st.caption("Yahoo Finance is limiting requests right now. Try again in a minute or two.")
+        return
     except ValueError:
         st.caption(f"{plain(isin)} is not a valid ISIN.")
         return
@@ -530,14 +588,23 @@ def show_symbols(isin: str) -> None:
     st.markdown(
         "\n".join(
             f"- `{quote['symbol']}` {plain(quote['name'])} "
-            f"({plain(quote['type'].lower() or 'unknown type')}, {plain(quote['exchange'])})"
+            f"({plain(quote['type'].lower() or 'unknown type')}, {plain(quote['exchange'])}; "
+            f"{price_history(quote)})"
             for quote in found
         )
     )
     st.caption(
         f"Yahoo Finance symbols for {plain(isin)}. Check the name and share class before "
         "using one: Yahoo's search can list another class of the same fund."
+        + ("" if any(map(usable, found)) else " None has the 19 months of prices a clone needs.")
     )
+
+
+def price_history(quote: dict) -> str:
+    """How many prices Yahoo Finance has for a symbol from yahoo_symbols, in words."""
+    if usable(quote):
+        return f"prices since {quote['prices_from']}"
+    return "too few prices for a clone" if quote.get("days") else "no prices"
 
 
 def factsheet_lookup() -> None:
@@ -696,19 +763,33 @@ def render_verdict(a: Analysis) -> None:
 
 
 def render_switching(a: Analysis, amount: float, years: int) -> None:
-    """What leaving the fund for the clone costs: its sales load, the tax on realised gains
-    and the trading the clone does from then on."""
-    with st.expander("Switching from the fund: load, tax and trading"):
-        # one below the other: the column is too narrow for three inputs side by side
+    """What leaving the fund for the clone costs: a deferred sales charge and the tax on
+    realised gains, set against the lower fees, and the trading the clone does from then
+    on. A front-end load counts only for new money: money in the fund has paid it."""
+    with st.expander("Switching from the fund: loads, tax and trading"):
+        # one below the other: the column is too narrow for several inputs side by side
         load = (
             st.number_input(
-                "Sales load paid, %",
+                "Front-end load on new money, %",
                 0.0,
                 10.0,
                 0.0,
                 step=0.25,
                 help="A front-end load is not in the fund's returns here, which follow its net "
-                "asset value. Class A shares of stock funds often charge up to 5.75%.",
+                "asset value. Class A shares of stock funds often charge up to 5.75%. Money "
+                "already in the fund has paid it, so it does not count for switching.",
+            )
+            / 100
+        )
+        exit_charge = (
+            st.number_input(
+                "Deferred sales charge if you sell now, %",
+                0.0,
+                10.0,
+                0.0,
+                step=0.25,
+                help="Class C shares, and some Class A shares bought without a load, charge "
+                "this when sold within the first year or so.",
             )
             / 100
         )
@@ -724,40 +805,76 @@ def render_switching(a: Analysis, amount: float, years: int) -> None:
             )
             / 100
         )
-        rate = st.number_input("Tax rate on gains, %", 0.0, 60.0, 15.0, step=1.0) / 100
+        rate = (
+            st.number_input(
+                "Tax rate on gains, %",
+                0.0,
+                60.0,
+                15.0,
+                step=1.0,
+                help="Your rate on realised gains; 0 in a tax-deferred account. In the US, "
+                "long-term gains are taxed at 0, 15 or 20%, plus 3.8% on high incomes, and "
+                "gains held a year or less as income. In Germany, 26.375% with the solidarity "
+                "surcharge, on 70% of the gains of equity funds and ETFs: about 18.5%.",
+            )
+            / 100
+        )
 
         if load > 0:
             st.caption(
-                f"A {load:.2%} sales load on {amount:,.0f} USD costs {amount * load:,.0f} USD up "
-                f"front, as much as {load_drag(load, years):.2%} a year over {years} years."
+                f"New money in the fund at a {load:.2%} load: {amount * load:,.0f} USD of "
+                f"{amount:,.0f} goes to the load, as much as {load_drag(load, years):.2%} a year "
+                f"over {years} years on top of the fees. Money already in the fund has paid its "
+                "load, so switching does not save it."
             )
-        saved = a.expense_ratio + load_drag(load, years) - a.clone_expense_ratio
-        result = switching(amount, gain, rate, saved)
-        if result["tax"] > 0:
-            lines = [
-                f"Selling the fund would realise {amount * gain:,.0f} USD of gains and cost about "
-                f"{result['tax']:,.0f} USD in tax."
-            ]
-            if saved > 0:
+        fees = a.expense_ratio - a.clone_expense_ratio
+        result = switching(amount, gain, rate, fees, exit_charge)
+        lines = []
+        if result["cost"] > 0:
+            parts = []
+            if result["tax"] > 0:
+                parts.append(
+                    f"about {result['tax']:,.0f} USD in tax on {amount * gain:,.0f} USD of gains"
+                )
+            if result["exit_charge"] > 0:
+                parts.append(f"{result['exit_charge']:,.0f} USD in deferred sales charge")
+            lines.append(f"Selling the fund now would cost {' and '.join(parts)}.")
+        if fees > 0:
+            lines.append(f"The clone's lower fees save about {amount * fees:,.0f} USD a year.")
+        else:
+            lines.append("The clone costs no less than the fund in fees.")
+        if result["cost"] > 0:
+            if result["yearly_saving"] > 0:
                 lines.append(
-                    f"The clone saves about {result['yearly_saving']:,.0f} USD a year, so the tax "
-                    f"takes about {result['years_to_recover']:.1f} years to earn back. Most of it "
-                    "is paid earlier rather than extra: selling the fund later would owe it too."
+                    "At that rate the cost of switching takes about "
+                    f"{result['years_to_recover']:.1f} years to earn back."
                 )
             else:
-                lines.append("The clone costs no less than the fund, so nothing earns it back.")
+                lines.append("That leaves nothing to earn back the cost of switching.")
+            if result["tax"] > 0:
+                lines.append(
+                    "Most of the tax on selling is paid earlier rather than extra: selling the "
+                    "fund later would owe it too."
+                )
         else:
-            lines = [
+            lines.append(
                 "With no unrealised gain, or in a tax-deferred account such as a 401(k) or an "
-                "IRA, switching costs no tax."
-            ]
+                "IRA, selling the fund costs no tax."
+            )
         st.caption(" ".join(lines))
+        rep = a.replication
+        span = min(years, (rep.returns.index[-1] - rep.weights.index[0]).days / 365.25)
+        realised = max(rep.realised_gains_per_year(years), 0.0)
         reported = f"the {a.turnover:.0%} the fund reports" if a.turnover else "what the fund does"
         st.caption(
-            f"The clone trades about {a.replication.annual_turnover / 2:.0%} of its value a year, "
-            f"counting buys and sells once each, against {reported}. In a taxable account those "
-            "sales realise gains too; quarterly rebalancing under Advanced roughly halves the "
-            "clone's trading."
+            f"The clone trades about {rep.annual_turnover / 2:.0%} of its value a year, counting "
+            f"buys and sells once each, against {reported}. In a taxable account its sales "
+            f"realise gains too: in its first {span:.0f} years out of sample, starting with "
+            f"none, about {realised:.1%} of its value a year, or {amount * realised * rate:,.0f} "
+            "USD of tax a year at your rate. Like the tax on selling the fund, most of it is "
+            "paid earlier rather than extra, and the fund pays out its own realised gains too, "
+            "which Yahoo Finance does not report reliably, so neither is in the payback above. "
+            "Quarterly rebalancing under Advanced roughly halves the clone's trading."
         )
 
 
@@ -796,6 +913,32 @@ def render_orders(a: Analysis, params: dict, allocation: pd.DataFrame, amount: f
         )
 
 
+def render_twins(a: Analysis) -> None:
+    """The UCITS twins of the clone's US-listed ETFs, for investors in the EU."""
+    if not st.toggle(
+        "UCITS twins for investors in the EU",
+        help="For each ETF, a UCITS ETF that follows the same or a similar index, which "
+        "investors in the EU can buy where US-listed ETFs are not offered to them.",
+    ):
+        return
+    show_table(a.twins(), {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
+    cover = etfs.twin_coverage(a.current_weights.to_dict())
+    cost = (
+        f"; the twins cost {cover['expense_ratio']:.2%} a year"
+        if cover["same"] + cover["similar"]
+        else ""
+    )
+    st.caption(
+        "Names, ISINs and total expense ratios from justETF "
+        f"({etfs.TWINS_AS_OF}). Of the clone's invested weight, {cover['same']:.0%} has a "
+        f"twin on the same index, sometimes capped differently, {cover['similar']:.0%} one "
+        f"on a similar index and {cover['none']:.0%} none{cost}. The clone was fitted and "
+        "scored with the US-listed ETFs, whose prices are set together with the fund's. The "
+        "twins follow their indices in other trading hours and currencies, and a clone built "
+        "from them was not tested here."
+    )
+
+
 def render_clone(a: Analysis, params: dict, mode: str) -> None:
     rep = a.replication
     cfg = rep.config
@@ -804,11 +947,18 @@ def render_clone(a: Analysis, params: dict, mode: str) -> None:
     with left:
         st.markdown(f"**The clone today**, traded {rep.weights.index[-1]:%d %b %Y}")
         show_table(allocation, {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
-        st.caption(
-            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on "
-            f"{cfg.frequency} returns of the past {cfg.window} trading days. "
-            f"Turnover {rep.annual_turnover:.1f}× a year at {cfg.cost_bps:g} bp per trade."
+        fitted = (
+            f"daily returns, summed over {cfg.overlap} days,"
+            if cfg.frequency == "daily" and cfg.overlap > 1
+            else f"{cfg.frequency} returns"
         )
+        st.caption(
+            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on {fitted} "
+            f"of the past {cfg.window} trading days. Turnover {rep.annual_turnover:.1f}× a "
+            f"year at {cfg.cost_bps:g} bp per trade."
+        )
+        if params["etf_set"] == etfs.DEFAULT_SET and not a.current_weights.empty:
+            render_twins(a)
     with right:
         st.markdown("**What it costs**")
         amount_col, years_col = st.columns([3, 2])
@@ -992,8 +1142,7 @@ def main() -> None:
 
     st.title("FundClone")
     st.caption(
-        "Clone any fund or portfolio with a handful of low-cost ETFs, "
-        "and see what the manager adds after fees."
+        "Clone any fund or portfolio with low-cost ETFs, and see what the manager adds after fees."
     )
     st.caption(DISCLAIMER)
     if not params["target"]:
@@ -1010,7 +1159,8 @@ def main() -> None:
         return
     try:
         with st.spinner("Loading prices and building the clone"):
-            analysis = analyse(**params)
+            # settings a session stored before a new one was added take its default
+            analysis = analyse(**{**DEFAULTS, **params})
     except Exception as exc:  # data gaps, bad tickers and bad portfolios surface as messages
         st.error(f"Could not build the clone: {plain(exc)}")
         return

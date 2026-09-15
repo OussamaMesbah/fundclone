@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from fakes import CONFIG, SMALL, analyse, fake_factors, fake_info, fake_prices
+from fakes import CONFIG, DATES, SMALL, analyse, fake_factors, fake_info, fake_prices
 
 from fundclone import etfs
 from fundclone.analysis import _region_for, run_analysis
@@ -155,6 +155,44 @@ def test_an_unadjusted_split_is_undone_with_a_note():
     a = analyse(price_loader=loader)
     assert any("10-for-1 split" in note for note in a.notes)
     assert a.returns["fund"].abs().max() < 0.2
+
+
+def test_a_recent_unadjusted_distribution_ends_the_figures_before_it():
+    def loader(tickers, start, end):
+        prices = fake_prices(tickers, start, end)
+        prices.iloc[-3:, prices.columns.get_loc("FUND")] *= 0.9  # paid out, not adjusted
+        return prices
+
+    a = analyse(price_loader=loader)
+    assert any("before Yahoo Finance adjusts" in note for note in a.notes)
+    assert a.returns.index[-1] == DATES[-4]
+
+
+def test_a_distribution_booked_a_day_late_is_left_out_with_a_note():
+    def loader(tickers, start, end):
+        prices = fake_prices(tickers, start, end)
+        prices.iloc[400, prices.columns.get_loc("FUND")] *= 0.93
+        return prices
+
+    a = analyse(price_loader=loader)
+    assert any("books a distribution a day late" in note for note in a.notes)
+
+
+def test_an_expense_ratio_entered_replaces_the_one_from_yahoo():
+    a = analyse(expense_ratio=0.015)
+    assert a.expense_ratio == 0.015
+    assert any("1.50% is the one entered; Yahoo Finance reports 0.75%" in note for note in a.notes)
+    with pytest.raises(ValueError, match="between 0% and 10%"):
+        analyse(expense_ratio=0.5)
+
+
+def test_the_clone_lists_a_ucits_twin_for_each_etf():
+    a = analyse()
+    twins = a.twins()
+    assert list(twins["ETF"]) == list(a.current_weights.index)
+    for _, row in twins.iterrows():
+        twin = etfs.UCITS_TWINS.get(row["ETF"])
+        assert row["ISIN"] == (twin.isin if twin else "")
 
 
 def test_a_fund_whose_price_never_changes_raises():

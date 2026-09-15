@@ -1,7 +1,7 @@
 # FundClone
 
 **Is your active fund worth its fee?** FundClone clones any mutual fund, ETF or
-portfolio with a handful of low-cost ETFs, and measures, strictly out of sample, how
+portfolio with a mix of low-cost ETFs, and measures, strictly out of sample, how
 much of the fund you get from the clone and what the manager adds on top after fees.
 
 [![tests](https://github.com/OussamaMesbah/fundclone/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/OussamaMesbah/fundclone/actions/workflows/tests.yml)
@@ -18,15 +18,17 @@ much of the fund you get from the clone and what the manager adds on top after f
   reproduces, how much faster or slower the fund grew than its clone after all fees
   (with a 95% range), and whether it meets the closet-indexing thresholds of an ESMA
   working paper.
-- **A clone you can buy.** Typically seven to ten liquid ETFs, their weights, whole-share
-  orders for any amount, what the fees add up to and a CSV to take to your broker. Cap
-  it at three or five ETFs if you prefer something simpler.
+- **The clone itself.** Usually six to ten liquid ETFs and their weights, what the fees
+  add up to and how the mix changed over time; cap it at three or five ETFs for a simpler
+  one. Whole-share orders and a CSV show what the weights would mean for an amount, as an
+  illustration rather than a recommendation.
 - **What switching would cost.** The tax on gains you would realise by selling the fund,
-  how long the lower fees take to earn it back, a warning for share classes that charge a
-  sales load, and how much the clone trades against what the fund reports.
-- **For investors in the EU.** 47 UCITS ETFs and a gold ETC on Xetra as a second set of
-  building blocks, for funds priced in European hours, and a lookup that finds a European
-  fund's Yahoo Finance symbol from its ISIN.
+  the tax on the gains the clone's own trading realises, how long the lower fees take to
+  earn it back, and a warning for share classes that charge a sales load.
+- **For investors in the EU.** For each ETF of a clone, a UCITS ETF that follows the same
+  or a similar index, with its ISIN; a second set of 47 UCITS ETFs and a gold ETC on
+  Xetra for funds priced in European hours; and a lookup that finds a European fund's
+  Yahoo Finance symbol from its ISIN.
 - **An X-ray.** Fama-French factor exposures with Newey-West errors, how they drifted
   over time, and the single ETF that comes closest to the fund.
 
@@ -48,23 +50,24 @@ fundclone AGTHX
 ```
 
 ```text
-American Funds Growth Fd of Amer A (AGTHX), out of sample 2006-08-02 to 2026-09-10
+American Funds Growth Fd of Amer A (AGTHX), out of sample 2006-08-02 to 2026-09-14
 
-A clone of 10 ETFs explains 98% of the variation in AGTHX's weekly returns out of sample, with a tracking error of 2.3% a year.
-The clone costs 0.27% a year in ETF fees; the fund charges 0.59%.
-AGTHX returned 0.2% a year more than its clone after all fees; the 95% range is -0.8% to +1.3%, so the gap is within the noise.
+A clone of 11 ETFs explains 98% of the variation in AGTHX's weekly returns out of sample, with a tracking error of 2.4% a year.
+The clone costs 0.24% a year in ETF fees; the fund charges 0.59%.
+AGTHX returned 0.1% a year less than its clone after all fees; the 95% range is -1.2% to +1.1%, so the gap is within the noise.
 The closest single ETF, IWF, tracks with 4.2% tracking error; against it alone, AGTHX returned 1.9% a year less (95% range -3.8% to +0.0%).
 
 Clone as of 2026-09-01:
-  IWF    Russell 1000 Growth                  32.0%
-  FDN    Internet                             14.8%
-  XLY    Consumer Discretionary               10.4%
-  AAXJ   MSCI All Country Asia ex Japan        8.8%
+  IWF    Russell 1000 Growth                  28.4%
+  QQQ    Nasdaq-100                           16.0%
+  FDN    Internet                             10.3%
+  EFG    MSCI EAFE Growth                      8.6%
   ...
+note: Class A shares usually charge a front-end sales load, often up to 5.75% for stock funds. ...
 ```
 
 The web app at [fundclone.streamlit.app](https://fundclone.streamlit.app) shows the same
-analysis with charts, a shopping list and links that carry every setting, such as
+analysis with charts, the cost of switching and links that carry every setting, such as
 [`?ticker=AGTHX&etfs=5`](https://fundclone.streamlit.app/?ticker=AGTHX&etfs=5). To run it
 locally:
 
@@ -80,39 +83,48 @@ and not stored.
 Tracking error measures how far the fund and its clone drift apart each year. Every
 clone return below comes after the data used to choose the weights that earned it, and
 after trading costs. FundClone was developed on 41 funds. The table shows 23 other US
-mutual funds across the same categories, picked once development was finished and run
-once with the final code:
+mutual funds across the same categories, picked once version 0.3 was finished and scored
+once with it; version 0.6 changed the fit (below) and was scored on them once more:
 
 | 23 fresh funds, 2010 to 2026 | Median tracking error | Mean tracking error | Median R² | ETFs held |
 |---|---|---|---|---|
-| Before 0.3: 4-7 hand-picked ETFs | 3.78% | 4.44% | 0.930 | 2.9 |
-| **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **7.8** |
-| FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 4.6 |
+| The closest single ETF, picked with hindsight | 4.35% | 4.68% | 0.912 | 1 |
+| 4-7 hand-picked ETFs, as before 0.3 | 3.41% | 4.37% | 0.930 | 2.9 |
+| FundClone 0.3 | 2.79% | 2.85% | 0.970 | 7.8 |
+| **FundClone 0.6** | **2.73%** | **2.88%** | **0.968** | **6.8** |
+| FundClone 0.6, at most 5 ETFs | 2.88% | 2.96% | 0.966 | 4.5 |
 
 With 23 funds the median itself is uncertain: drawing the funds again and again with
-replacement (a bootstrap) puts it between 2.3% and 3.2% with 95% confidence. Compared fund
-by fund, the clone tracks 0.54 percentage points more closely in the median, with a 95%
-range of 0.25 to 1.31 points. The 81 ETFs were picked in 2026, with hindsight; limited to
-the 68 that were already trading in January 2009, a year before scoring starts, the median
-over all 64 funds stays at 2.91%.
+replacement (a bootstrap) puts it between 2.1% and 3.2% with 95% confidence. Compared fund
+by fund, the clone tracks 1.20 percentage points more closely than the closest single ETF
+in the median (95% range 0.80 to 2.07; more closely on 22 of the 23 funds), and 0.73
+points more closely than the hand-picked ETFs (0.35 to 1.13). Both halves of the period
+show the same: from 2010 to 2017 the fresh median is 2.40% against 3.31% for the closest
+ETF, from 2018 to 2026 3.15% against 5.12%. The 81 ETFs were picked in 2026, with
+hindsight; limited to the 68 that were already trading in January 2009, a year before
+scoring starts, the median over all 64 funds stays at 2.84%.
 
-The clone tracks more closely than before on 22 of the 23 funds; the exception is an S&P
-500 index fund (0.60% before, 0.63% now). Plain least squares on the same 81 ETFs tracks
-about as closely (2.84%) but trades twice as much and holds 13 ETFs. On the 41
-development funds the picture is the same: a median of 3.66% before and 2.93% now. By
+Version 0.6 fits the clone on overlapping three-day returns instead of single days, with a
+stronger pull towards last month's weights. Daily fund prices that follow the market a
+little late had made the clones hold too little risk: the funds' median beta to their
+clones was 1.03, which flattered the funds by about 0.2 percentage points a year, and is
+now 1.01. The new fit was chosen on the development funds by a rule set before looking at
+the results. On the fresh funds it tracks 0.07 points less closely than 0.3 in the median
+fund, with one ETF fewer and 12% less trading. Plain least squares on the same 81 ETFs
+tracks about as closely (2.70%) but trades more than twice as much and holds 13 ETFs. By
 category, over the whole benchmark:
 
-| Category | Funds | Before | 0.3 | Example |
+| Category | Funds | Hand-picked ETFs | 0.6 | Example |
 |---|---|---|---|---|
 | Index funds | 4 | 0.6% | 0.6% | VFIAX 0.6% |
-| US large-cap | 15 | 3.9% | 3.1% | AGTHX 2.2% |
-| US small/mid-cap | 7 | 4.2% | 3.2% | VEXPX 2.1% |
-| International | 10 | 4.5% | 3.7% | HAINX 3.0% |
-| Global | 2 | 3.1% | 2.3% | ANWPX 2.3% |
-| Balanced | 9 | 2.4% | 1.8% | FBALX 1.3% |
-| Bond | 9 | 1.9% | 1.8% | VBTLX 1.2% |
+| US large-cap | 15 | 3.8% | 3.0% | AGTHX 2.4% |
+| US small/mid-cap | 7 | 4.2% | 3.3% | VEXPX 2.2% |
+| International | 10 | 4.4% | 3.5% | HAINX 2.9% |
+| Global | 2 | 3.1% | 2.3% | ANWPX 2.4% |
+| Balanced | 9 | 2.4% | 1.9% | FBALX 1.6% |
+| Bond | 9 | 1.9% | 1.7% | VBTLX 1.1% |
 | Sector | 7 | 13.3% | 4.6% | VGHCX 3.7% |
-| Single stock | 1 | 11.8% | 10.7% | BRK-B |
+| Single stock | 1 | 11.8% | 10.8% | BRK-B |
 
 What remains is mostly what the manager does that no ETF combination can: picking
 individual stocks. For a fund with 2% tracking error that is a small bet; for ARKK (21%)
@@ -120,15 +132,24 @@ or Berkshire Hathaway (11%) it is a large part of the story. The protocol, the r
 fund, a comparison of seven estimation methods and the commands to reproduce every
 number are in [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/master/benchmarks/README.md).
 
+Did the funds beat their clones? Of the benchmark's 59 active funds, 9 returned more than
+their clone by more than noise from 2010 to 2026 after fees, and 1 less; the median fund
+was 0.33% a year ahead. They are well-known survivors, which flatters them, and most of
+the lead dates from 2010 to 2017: from 2018 on, 2 were ahead by more than noise and 2
+behind. Against the closest single ETF, 6 were ahead by more than noise and 8 behind, and
+the median fund came out level.
+
 ## How it works
 
 FundClone builds on returns-based style analysis
 ([Sharpe, 1992](https://web.stanford.edu/~wfsharpe/art/sa/sa.htm)): a fund's returns are
-explained by a long-only mix of asset-class returns. Sharpe fitted that mix once, over the
-whole history, to describe a fund's style. FundClone refits it every month from past data
-only, on ETFs you can buy, and measures out of sample, after trading costs, how closely the
-clone follows the fund and what the fund returns beyond it. Every step, with its parameters
-and references, is in
+explained by a long-only mix of asset-class returns. To judge performance, Sharpe
+re-estimated that mix every month from the previous 60 months only, and counted what the
+fund returned beyond it as selection. FundClone keeps that design and changes the
+ingredients: ETFs you can buy instead of asset-class indices, daily returns weighted
+towards recent days, a day's delay before trading, and trading costs. It then measures,
+out of sample, how closely the clone follows the fund and what the fund returns beyond it.
+Every step, with its parameters and references, is in
 [docs/method.md](https://github.com/OussamaMesbah/fundclone/blob/master/docs/method.md).
 
 1. **Building blocks.** 81 liquid US-listed ETFs: size and style, the eleven sectors, 16
@@ -136,9 +157,11 @@ and references, is in
    commodities. ETFs join once they have enough history. For investors in the EU there is
    a second set of 47 UCITS ETFs and ETCs on Xetra, whose euro prices are converted to USD.
 2. **Monthly re-estimation.** At each month-end the long-only ETF mix that best follows
-   the fund's daily excess returns over the past 18 months is found by constrained least
-   squares. Recent days count more (63-day half-life), weights the data cannot tell apart
-   stay close to last month's, and positions below 2% are dropped.
+   the fund's excess returns over the past 18 months is found by constrained least
+   squares, on overlapping three-day sums of daily returns, so that fund prices that
+   follow the market a little late do not make the clone too cautious. Recent days count
+   more (63-day half-life), weights the data cannot tell apart stay close to last month's,
+   and positions below 2% are dropped.
 3. **Realistic trading.** The new weights are traded at the next day's close and drift
    with prices until the following month. Every trade pays 5 bp; anything not invested
    sits in T-bills.
@@ -146,11 +169,10 @@ and references, is in
    computed on weekly out-of-sample returns, and the return gap is the difference in
    compound growth. Its 95% range uses a Newey-West standard error, which widens it when
    a gap tends to carry over from one week to the next. The verdict also sets the fund
-   against the closest single ETF, the simplest alternative to it. Yahoo Finance sometimes repeats a mutual fund's previous price and
-   catches up a day later, so a day on which the price did not change although the
-   market moved enough to move it is merged with the next. For funds and ETFs, prices
-   that jump and come back within days on a calm market are dropped as data errors, and
-   unadjusted splits are corrected.
+   against the closest single ETF, the simplest alternative to it. Before any of this,
+   the fund's prices are checked for what goes wrong on Yahoo Finance: prices repeated
+   for a day, bad prices that come back, unadjusted splits, and distributions booked a
+   day late or not yet (docs/method.md, section 2).
 5. **Factor view.** Monthly excess returns are regressed on the Fama-French five factors
    and momentum, with term and credit factors when the clone holds bonds, and the average
    return is split into factor contributions and alpha.
@@ -173,29 +195,44 @@ three = ReplicationConfig(max_etfs=3)
 portfolio = run_analysis(mix, "2012-01-01", "2026-09-01", replication=three)
 ```
 
-## Related tools
+## Prior work and related tools
 
-Returns-based style analysis is a standard tool. Portfolio Visualizer offers it together
-with factor regressions and manager performance analysis, and Interactive Brokers gives
-its clients a Mutual Fund Replicator that suggests ETFs in place of a mutual fund.
-FundClone differs in that every clone is tested out of sample with trading costs, and it
-is open source under the MIT license, benchmark included.
+None of the ideas is new. Sharpe (1992) already measured a fund against a style mix
+estimated from earlier data only, and Hasanhodzic and Lo (2007) built rolling-window
+"linear clones" of hedge funds from liquid factors. Commercial analytics such as Zephyr
+StyleADVISOR have offered style analysis for decades, Portfolio Visualizer offers it with
+factor regressions and manager performance analysis, and Interactive Brokers gives its
+clients a Mutual Fund Replicator that suggests ETFs in place of a mutual fund. What
+FundClone adds is narrower: the style mix is made of ETFs you can buy and is traded with
+costs, the method is scored on a published benchmark that includes funds picked after
+development, and all of it, benchmark included, is open source under the MIT license.
 
 ## Limitations
 
 - Stock selection cannot be cloned from returns. For concentrated funds the tracking
   error stays high; that is the size of the active bet you pay for.
-- Investors in the EU generally cannot buy the US-listed ETFs. The UCITS set suits funds
-  priced in European hours. For funds priced in US hours its Xetra prices, set four and a
+- The clone can hold a little less risk than the fund: when the fund's prices follow the
+  market late, and when no mix of ETFs moves as much as the fund, since the clone does not
+  borrow. On the benchmark the funds' median beta to their clones is 1.01 (1.04 for bond
+  funds, whose clones keep about 15% in T-bills), worth about 0.06 percentage points a
+  year of the gap in the median; for a fund like ARKK, with a beta of 1.45 to its clone,
+  it is much more.
+- Investors in the EU generally cannot buy the US-listed ETFs. For 64 of the 81 the app
+  lists a UCITS twin on the same or a similar index, but a clone built from the twins was
+  not tested. The UCITS set suits funds priced in European hours. For funds priced in US hours its Xetra prices, set four and a
   half hours earlier, add timing noise: over 2018 to 2026 the benchmark's median weekly
-  tracking error is 8.5% with UCITS ETFs against 3.2% with US-listed ones, and 8.6%
+  tracking error is 8.0% with UCITS ETFs against 3.2% with US-listed ones, and 8.0%
   against 1.1% for index funds (see benchmarks/).
 - The first clone needs about 19 months of prices (18 to fit it), and figures from less
   than a year of out-of-sample returns mean little: the verdict says so and leaves out
   the ESMA screen.
 - Prices come from Yahoo Finance through yfinance. They have gaps and errors, and Yahoo's
   terms allow personal, non-commercial use only, so the repository ships no Yahoo data.
-  When Yahoo limits requests, FundClone waits, tries again and then says so.
+  When Yahoo limits requests, FundClone waits, tries again and then says so. Yahoo
+  sometimes takes days to adjust a fund's prices for a distribution; when the latest
+  prices fall the way a payout does, the figures end the day before, with a note. Its
+  coverage of European funds is patchy: many have only a few years of prices, some none,
+  and often no expense ratio.
 - Every figure follows the fund's net asset value: after its expense ratio, but before any
   sales load and before tax. The app warns for share classes whose name implies a load, and
   turns a load and your own tax situation into numbers, but it knows neither.
@@ -215,8 +252,6 @@ is open source under the MIT license, benchmark included.
 
 ## Roadmap
 
-- UCITS counterparts for the US building blocks, so that the clone of a US fund can be
-  bought in the EU.
 - Look-through of US fund holdings from SEC N-PORT filings.
 - Screening many funds at once.
 
@@ -247,5 +282,3 @@ unchanged.
 
 FundClone is released under the [MIT license](https://github.com/OussamaMesbah/fundclone/blob/master/LICENSE). If you use it in research, cite
 it with the metadata in [CITATION.cff](https://github.com/OussamaMesbah/fundclone/blob/master/CITATION.cff).
-
-FundClone is a research tool, not investment advice.

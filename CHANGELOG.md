@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+## 0.6.0 (2026-09-15)
+
+A second, critical pass before launch. The clone is now fitted on overlapping three-day
+returns, which gives it the right amount of risk, so every benchmark number was rescored;
+the credit to Sharpe (1992), the switching calculator and several data checks were
+corrected; and investors in the EU get UCITS twins of the US-listed ETFs.
+
+### Added
+- UCITS twins: for 64 of the 81 US-listed ETFs, a UCITS ETF that investors in the EU can
+  buy in its place, following the same index (30), the same index capped differently (18)
+  or a similar one (16), with ISINs and total expense ratios from justETF. The app lists
+  them for a clone under a toggle, the command line with `--ucits-twins`, and Python with
+  `Analysis.twins()`.
+- The benchmark reports the closest single ETF of every fund, as the app's verdict does, and
+  how many active funds came out ahead of or behind their clone and that ETF after fees, by
+  more than noise or not, over the whole period or any part of it (`--eval-end`). The
+  README and benchmarks/README.md report the result.
+- An expense ratio can be entered where Yahoo Finance reports none or an outdated one, as
+  for many European funds: in the app, in links (`ter=1.5`), on the command line
+  (`--expense-ratio 1.5`) and in Python (`expense_ratio=0.015`).
+- The ISIN lookup shows how many prices Yahoo has for each symbol and since when, lists
+  those with enough for a clone first, and searches by the fund's name when no listing has
+  prices.
+- "Switching from the fund" shows the tax on the gains the clone's own trading realises,
+  at average cost over its first years out of sample, when it starts with no gains as
+  someone switching now would. Like the tax on selling the fund and on the fund's own
+  capital-gain distributions, it is mostly paid earlier rather than extra, so it is shown
+  beside the payback rather than in it.
+- `benchmarks.compare` compares two benchmark runs fund by fund, with a bootstrap range for
+  the median difference, so the README's fund-by-fund figures can be reproduced.
+- A check for distributions Yahoo Finance has not adjusted for yet. When one of a fund's
+  last ten returns falls the way a payout does and does not come back, the figures end the
+  day before, with a note. FLPSX's price fell 8.7% this way on 11 September 2026, and Yahoo
+  listed no distribution.
+
+### Changed
+- The clone is fitted on overlapping three-day returns, with a stronger pull towards last
+  month's weights. Daily fund prices that follow the market a little late had made the
+  clones hold too little risk, which flattered the funds by about 0.2 points a year: the
+  funds' median beta to their clones falls from 1.03 to 1.01 on the benchmark. Clones hold
+  7 ETFs instead of 8 and trade about 10% less, for about the same tracking error (0.07
+  points more on the median fresh fund). The fit was chosen on the dev funds by a rule set
+  in advance, and every published number is rescored on the snapshot of 14 September 2026.
+- The benchmark's baseline, the hand-picked ETFs used before 0.3, is fitted to the same
+  cleaned prices as everything else instead of raw prices.
+- "Switching from the fund" no longer counts a front-end load already paid as a saving
+  from switching: it is gone whether or not the fund is sold, so it now counts only for new
+  money. A deferred sales charge still due on selling is part of the cost of switching.
+- The README describes the clone and its orders as the app does: whole-share orders and the
+  CSV are an illustration, not a recommendation.
+
+### Fixed
+- The value factor ETFs, VLUE and QDVI, are labelled with the index they follow, MSCI USA
+  Enhanced Value.
+- Prices that break away from the fund's closest ETF and come back within two days are
+  left out: distributions Yahoo books a day late (AMCPX and AWSHX on 19 December 2014) and
+  prices that stay unchanged while the market moves (FBIOX in May 2025).
+- While Yahoo limits requests, looking up a fund's name, currency and fees is retried, then
+  falls back to an earlier lookup and otherwise says so, instead of reading a fund of
+  unknown currency as priced in dollars. A self-hosted app with a price snapshot still
+  works while Yahoo limits every request.
+- The README, docs/method.md and the app's Method tab said Sharpe (1992) fitted the style
+  mix once, over the whole history. To measure performance he re-estimated it every month
+  from the previous 60 months. They now say so, credit Hasanhodzic and Lo (2007) for
+  rolling-window clones, and say what FundClone changes: ETFs you can buy, daily returns
+  and trading costs.
+
 ## 0.5.0 (2026-09-14)
 
 Answers to the points a critical reader would raise, and UCITS building blocks for
