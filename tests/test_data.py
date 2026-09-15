@@ -185,6 +185,62 @@ def test_a_cache_written_before_a_field_existed_is_fetched_again(tmp_path, monke
     assert data.fetch_info("AAA")["turnover"] == pytest.approx(0.32)
 
 
+def test_a_rate_limited_lookup_of_fund_details_is_repeated(tmp_path, monkeypatch):
+    from yfinance.exceptions import YFRateLimitError
+
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    attempts, waits = [], []
+
+    def ticker(symbol):
+        attempts.append(symbol)
+        if len(attempts) == 1:
+            raise YFRateLimitError()
+        return SimpleNamespace(info={"longName": "AAA Fund", "currency": "EUR"}, fast_info={})
+
+    monkeypatch.setattr(data.yf, "Ticker", ticker)
+    monkeypatch.setattr(data.time, "sleep", waits.append)
+    assert data.fetch_info("AAA")["currency"] == "EUR"
+    assert waits == [data.RATE_LIMIT_WAITS[0]]
+
+
+def test_a_lasting_rate_limit_on_fund_details_is_an_error_not_a_fund_in_dollars(
+    tmp_path, monkeypatch
+):
+    from yfinance.exceptions import YFRateLimitError
+
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    waits = []
+
+    def ticker(symbol):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(data.yf, "Ticker", ticker)
+    monkeypatch.setattr(data.time, "sleep", waits.append)
+    with pytest.raises(data.YahooRateLimitError, match="no fund details for AAA"):
+        data.fetch_info("AAA")
+    assert waits == list(data.RATE_LIMIT_WAITS)
+    assert not data._cache_file("info", "AAA", ".json").exists()
+
+
+def test_while_yahoo_limits_requests_an_old_lookup_of_fund_details_is_used(tmp_path, monkeypatch):
+    import os
+
+    from yfinance.exceptions import YFRateLimitError
+
+    monkeypatch.setattr(data, "CACHE_DIR", tmp_path)
+    path = data._cache_file("info", "AAA", ".json")
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(dict.fromkeys(data.INFO_FIELDS) | {"currency": "EUR"}))
+    os.utime(path, (0, 0))  # written long ago
+
+    def ticker(symbol):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(data.yf, "Ticker", ticker)
+    monkeypatch.setattr(data.time, "sleep", lambda seconds: None)
+    assert data.fetch_info("AAA")["currency"] == "EUR"
+
+
 def market_moves(n: int, seed: int) -> tuple[pd.DatetimeIndex, np.ndarray, pd.DataFrame]:
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range("2023-01-02", periods=n)
@@ -258,19 +314,47 @@ def test_a_recent_drop_the_market_does_not_explain_looks_like_an_unadjusted_dist
     dates, common, etfs = market_moves(400, seed=8)
     noise = np.random.default_rng(9).normal(0, 0.002, 400)
     fund = pd.Series(100 * np.cumprod(1 + common + noise), dates)
-    assert data.unadjusted_distribution(fund, etfs) is None
+    etf_prices = 100 * (1 + etfs).cumprod()
+    assert data.unadjusted_distribution(fund, etf_prices) is None
     paid = fund.copy()
     paid.iloc[-4:] *= 0.91  # paid out 9% three days before the end, and not adjusted
-    date, move, etf, _ = data.unadjusted_distribution(paid, etfs)
+    date, move, etf, _ = data.unadjusted_distribution(paid, etf_prices)
     assert date == dates[-4]
     assert move == pytest.approx(-0.09, abs=0.03)
     assert etf in etfs.columns
     older = fund.copy()
     older.iloc[-40:] *= 0.91  # long enough ago for Yahoo to have adjusted it
-    assert data.unadjusted_distribution(older, etfs) is None
+    assert data.unadjusted_distribution(older, etf_prices) is None
     blip = fund.copy()
     blip.iloc[-4] *= 0.91  # back the next day: a bad price, not a distribution
-    assert data.unadjusted_distribution(blip, etfs) is None
+    assert data.unadjusted_distribution(blip, etf_prices) is None
+
+
+def test_a_distribution_booked_a_day_late_is_merged_away():
+    dates, common, etfs = market_moves(400, seed=10)
+    noise = np.random.default_rng(11).normal(0, 0.002, 400)
+    fund = pd.Series(100 * np.cumprod(1 + common + noise), dates)
+    etf_prices = 100 * (1 + etfs).cumprod()
+    assert data.drop_reversed_moves(fund, etf_prices).equals(fund)
+    late = fund.copy()
+    late.iloc[200] *= 0.94  # the payout shows on the ex-date, the adjustment only a day later
+    dropped = late.index.difference(data.drop_reversed_moves(late, etf_prices).index)
+    assert list(dropped) == [dates[200]]
+    lasting = fund.copy()
+    lasting.iloc[200:] *= 0.94  # a drop that stays is left alone
+    assert data.drop_reversed_moves(lasting, etf_prices).equals(lasting)
+
+
+def test_a_fall_on_a_day_without_etf_prices_is_not_held_against_the_fund():
+    dates, common, etfs = market_moves(400, seed=12)
+    common[250] -= 0.06  # a crash the fund follows ...
+    etfs.iloc[250] -= 0.06
+    noise = np.random.default_rng(13).normal(0, 0.002, 400)
+    fund = pd.Series(100 * np.cumprod(1 + common + noise), dates)
+    etf_prices = 100 * (1 + etfs).cumprod()
+    etf_prices.iloc[250] = np.nan  # ... on a day Yahoo has no ETF prices
+    assert data.drop_reversed_moves(fund, etf_prices).equals(fund)
+    assert data.unadjusted_distribution(fund.iloc[:255], etf_prices) is None
 
 
 def test_interest_is_compounded_over_gaps_and_carried_forward():
@@ -350,11 +434,55 @@ def test_yahoo_symbols_for_an_isin(monkeypatch):
         {"longname": "without a symbol"},
     ]
     monkeypatch.setattr(data.yf, "Search", lambda isin, max_results: SimpleNamespace(quotes=quotes))
+    history = pd.Series(1.0, index=pd.bdate_range("2018-01-02", periods=500))
+    monkeypatch.setattr(
+        data, "fetch_prices", lambda tickers, start, end: pd.DataFrame({"HJUA.F": history})
+    )
     assert data.yahoo_symbols("DE0009848119") == [
-        {"symbol": "HJUA.F", "name": "DWS Top Dividende", "type": "ETF", "exchange": "Frankfurt"}
+        {
+            "symbol": "HJUA.F",
+            "name": "DWS Top Dividende",
+            "type": "ETF",
+            "exchange": "Frankfurt",
+            "days": 500,
+            "prices_from": "2018-01-02",
+        }
     ]
     with pytest.raises(ValueError, match="not a valid ISIN"):
         data.yahoo_symbols("DE0009848118")  # wrong check digit
+
+
+def test_without_a_listing_with_prices_the_fund_name_is_searched_too(monkeypatch):
+    listing = {"symbol": "HJUA.F", "longname": "DWS Top Dividende LD", "quoteType": "ETF"}
+    fund = {"symbol": "0P00000ABC.F", "longname": "DWS Top Dividende LD", "quoteType": "MUTUALFUND"}
+    results = {"DE0009848119": [listing], "DWS Top Dividende LD": [listing, fund]}
+    monkeypatch.setattr(
+        data.yf, "Search", lambda query, max_results: SimpleNamespace(quotes=results[query])
+    )
+    history = pd.Series(1.0, index=pd.bdate_range("2012-01-02", periods=1000))
+
+    def prices(tickers, start, end):
+        return pd.DataFrame({ticker: history for ticker in tickers if ticker.startswith("0P")})
+
+    monkeypatch.setattr(data, "fetch_prices", prices)
+    found = data.yahoo_symbols("DE0009848119")
+    assert [quote["symbol"] for quote in found] == ["0P00000ABC.F", "HJUA.F"]
+    assert found[0]["prices_from"] == "2012-01-02"
+    assert found[1]["days"] == 0
+
+
+def test_a_rate_limit_during_an_isin_lookup_is_reported_not_answered(monkeypatch):
+    quotes = [{"symbol": "HJUA.F", "longname": "DWS Top Dividende"}]
+    monkeypatch.setattr(
+        data.yf, "Search", lambda query, max_results: SimpleNamespace(quotes=quotes)
+    )
+
+    def limited(tickers, start, end):
+        raise data.YahooRateLimitError(tickers)
+
+    monkeypatch.setattr(data, "fetch_prices", limited)
+    with pytest.raises(data.YahooRateLimitError):
+        data.yahoo_symbols("DE0009848119")
 
 
 def test_yahoo_symbols_is_empty_when_the_search_fails(monkeypatch):
