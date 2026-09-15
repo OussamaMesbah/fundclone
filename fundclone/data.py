@@ -372,19 +372,33 @@ def _ticker_info(ticker: str) -> dict:
     raise YahooRateLimitError([ticker], "fund details")
 
 
+def _read_info(path: Path) -> dict:
+    info = json.loads(path.read_text())
+    if not isinstance(info, dict):
+        raise ValueError(f"Damaged info cache {path}")
+    return info
+
+
 def fetch_info(ticker: str) -> dict:
     """Name, currency, exchange time zone, quote type, net expense ratio (decimal) and
     reported holdings turnover of a Yahoo Finance symbol.
 
-    Values Yahoo does not report are None. Cached for a week. A rate limit that outlasts
-    the retries raises YahooRateLimitError instead of returning nothing: without its
-    currency, a fund priced in euros would be read as priced in dollars.
+    Values Yahoo does not report are None. Cached for a week. While Yahoo limits requests,
+    an earlier lookup of any age is used; without one, YahooRateLimitError is raised rather
+    than returning nothing, since a fund priced in euros would then be read as priced in
+    dollars.
     """
     path = _cache_file("info", ticker, ".json")
-    cached = _cached(path, INFO_MAX_AGE, lambda p: json.loads(p.read_text()))
-    if isinstance(cached, dict) and INFO_FIELDS <= cached.keys():
+    cached = _cached(path, INFO_MAX_AGE, _read_info)
+    if cached is not None and INFO_FIELDS <= cached.keys():
         return cached  # an older cache without every field is fetched again
-    raw = _ticker_info(ticker)
+    try:
+        raw = _ticker_info(ticker)
+    except YahooRateLimitError:
+        stale = _cached(path, float("inf"), _read_info)
+        if stale is None:
+            raise
+        return stale
     ratio = raw.get("netExpenseRatio")
     turnover = raw.get("annualHoldingsTurnover")
     info = {
@@ -411,10 +425,11 @@ MIN_HISTORY_DAYS = 400  # about the 19 months of prices a first clone needs
 
 def yahoo_symbols(isin: str, limit: int = 5) -> list[dict]:
     """The Yahoo Finance symbols that Yahoo's search lists for an ISIN, with name, type,
-    exchange, the number of daily prices Yahoo has ("days", None if that could not be
-    checked) and the first of them ("prices_from"), those with enough prices for a clone
-    first. If none has enough, the search is repeated with the first result's name, which
-    finds other listings of the same fund.
+    exchange, the number of daily prices Yahoo has ("days") and the first of them
+    ("prices_from"), those with enough prices for a clone first. If none has enough, the
+    search is repeated with the first result's name, which finds other listings of the same
+    fund. While Yahoo limits requests, YahooRateLimitError is raised, so that no incomplete
+    answer is kept in a cache.
 
     The search covers many European funds but not all, and can return another share class
     of the same fund, so the results are candidates to check, not an answer.
@@ -439,10 +454,7 @@ def _with_history(quotes: list[dict]) -> list[dict]:
     The prices go into the cache, so analysing one of the symbols afterwards is quick."""
     if not quotes:
         return quotes
-    try:
-        prices = fetch_prices([quote["symbol"] for quote in quotes], "1900-01-01", "2100-01-01")
-    except YahooRateLimitError:
-        return [{**quote, "days": None, "prices_from": None} for quote in quotes]
+    prices = fetch_prices([quote["symbol"] for quote in quotes], "1900-01-01", "2100-01-01")
     checked = []
     for quote in quotes:
         series = prices.get(quote["symbol"], pd.Series(dtype=float)).dropna()
@@ -455,7 +467,9 @@ def _search(query: str, limit: int) -> list[dict]:
     """The symbols Yahoo's search lists for `query`, or [] if the search fails."""
     try:
         quotes = yf.Search(query, max_results=limit).quotes
-    except Exception:  # rate limits and network trouble surface as assorted errors
+    except YFRateLimitError:
+        raise YahooRateLimitError() from None
+    except Exception:  # unknown queries and network trouble surface as assorted errors
         return []
     return [
         {
@@ -618,9 +632,17 @@ def adjust_splits(
     return prices, splits
 
 
+def _moves_on(etf_prices: pd.DataFrame, dates: pd.DatetimeIndex) -> pd.DataFrame:
+    """The ETFs' returns from each of `dates` to the next, labelled by the later date. A
+    missing price leaves the return unknown rather than making it a zero move followed by
+    a catch-up, which would look like a move of the fund against the market."""
+    prices = etf_prices.reindex(dates)
+    return prices / prices.shift(1) - 1
+
+
 def unadjusted_distribution(
     prices: pd.Series,
-    market_returns: pd.DataFrame,
+    etf_prices: pd.DataFrame,
     days: int = DISTRIBUTION_DAYS,
     floor: float = DISTRIBUTION_FLOOR,
     window: int = 252,
@@ -633,18 +655,21 @@ def unadjusted_distribution(
     returns, this finds the first that falls short of what the reference ETF most correlated
     with the fund over the previous `window` returns predicts, by more than `floor` and by
     ERROR_SIGMAS typical deviations, and that the following days do not undo by half.
-    Returns its date, the fund's move, that ETF and the ETF's move, or None.
+    `etf_prices` are the reference ETFs' prices. Returns the drop's date, the fund's move,
+    that ETF and the ETF's move, or None.
     """
     fund = (prices / prices.shift(1) - 1).iloc[1:]
     if len(fund) < window + days:
         return None
-    market = market_returns.reindex(fund.index)
+    market = _moves_on(etf_prices, prices.index).iloc[1:]
     past, recent = fund.index[-window - days : -days], fund.index[-days:]
-    correlations = market.loc[past].dropna(axis=1).corrwith(fund.loc[past]).dropna()
+    reference = market.loc[past]
+    reference = reference.loc[:, reference.notna().mean() >= 0.9]
+    correlations = reference.corrwith(fund.loc[past]).dropna()
     if correlations.empty:
         return None
     etf = str(correlations.idxmax())
-    moves = market[etf].fillna(0.0)
+    moves = market[etf]
     beta = fund.loc[past].cov(moves.loc[past]) / moves.loc[past].var()
     residual = fund - beta * moves
     typical = _ROBUST_SIGMA * float(residual.loc[past].abs().median())
@@ -661,7 +686,7 @@ REVERSAL_FLOOR = 0.04  # smaller breaks from the closest ETF that come back are 
 
 def drop_reversed_moves(
     prices: pd.Series,
-    market_returns: pd.DataFrame,
+    etf_prices: pd.DataFrame,
     floor: float = REVERSAL_FLOOR,
     days: int = 2,
 ) -> pd.Series:
@@ -674,13 +699,14 @@ def drop_reversed_moves(
     typical deviations, and that the next `days` returns undo by at least 80%, is such an
     artefact; the prices in between are dropped, which merges the days. The same catches
     prices that stay unchanged for a day or two while the market moves sharply, and fund
-    prices set hours before a crash day's close. Only ETFs with returns on nine in ten of
-    the fund's days can be the reference.
+    prices set hours before a crash day's close. `etf_prices` are the reference ETFs'
+    prices; only ETFs with prices on nine in ten of the fund's days can be the reference,
+    and a day without an ETF price is never held against the fund.
     """
     fund = (prices / prices.shift(1) - 1).iloc[1:]
     if len(fund) < 252:
         return prices
-    market = market_returns.reindex(fund.index)
+    market = _moves_on(etf_prices, prices.index).iloc[1:]
     reference = market.loc[:, market.notna().mean() >= 0.9]
     correlations = reference.corrwith(fund).dropna()
     if correlations.empty:

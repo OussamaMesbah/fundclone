@@ -107,15 +107,18 @@ class ReplicationResult:
         days = (self.returns.index[-1] - self.weights.index[0]).days
         return float(self.turnover.iloc[1:].sum() / (max(days, 1) / 365.25))
 
-    @property
-    def annual_realised_gains(self) -> float:
+    def realised_gains_per_year(self, years: float | None = None) -> float:
         """Gains the clone's sales realised per calendar year as a share of its value, net of
         losses, with each ETF's average cost as its basis: what a taxable account would owe
-        tax on. The initial purchase realises nothing."""
+        tax on. The clone starts with no gains, as someone switching now would, and `years`
+        limits the count to its first years out of sample; by default it covers all."""
         if self.realised is None or self.realised.empty:
             return 0.0
-        days = (self.returns.index[-1] - self.weights.index[0]).days
-        return float(self.realised.sum() / (max(days, 1) / 365.25))
+        start, end = self.weights.index[0], self.returns.index[-1]
+        if years is not None:
+            end = min(end, start + pd.Timedelta(days=round(365.25 * years)))
+        counted = self.realised[self.realised.index <= end]
+        return float(counted.sum() / (max((end - start).days, 1) / 365.25))
 
 
 class Simulation(NamedTuple):

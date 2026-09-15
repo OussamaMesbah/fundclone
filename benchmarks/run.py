@@ -154,11 +154,12 @@ def evaluate(fund: dict, universe: str) -> dict:
             market = daily_returns(prices[assets].ffill().reindex(fund_prices.index))
             stock = fund["category"] == "Single stock"  # the app checks funds and ETFs only
             if not stock:
-                fund_prices = drop_reversed_moves(drop_price_errors(fund_prices, market), market)
+                checked = drop_price_errors(fund_prices, market)
+                fund_prices = drop_reversed_moves(checked, prices[assets])
             fund_prices = drop_stale_prices(fund_prices, market)
             if not stock:
                 fund_prices = adjust_splits(fund_prices, market)[0]
-                if found := unadjusted_distribution(fund_prices, market):
+                if found := unadjusted_distribution(fund_prices, prices[assets]):
                     fund_prices = fund_prices[fund_prices.index < found[0]]
         fund_returns = daily_returns(fund_prices)
         etf_returns = daily_returns(prices[assets].ffill().reindex(fund_prices.index))

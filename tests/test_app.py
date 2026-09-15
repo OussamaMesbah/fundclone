@@ -120,7 +120,51 @@ def test_switching_shows_the_tax_and_how_long_it_takes_to_earn_it_back(app):
     assert any("600 USD in tax" in text for text in captions)
     assert any("years to earn back" in text for text in captions)
     assert any("trades about" in text and "the 35% the fund reports" in text for text in captions)
-    assert any("realised gains of about" in text for text in captions)
+    assert any("starting with none" in text for text in captions)
+
+
+def test_the_snapshot_is_used_while_yahoo_limits_every_request(app, monkeypatch, tmp_path):
+    snapshot = tmp_path / "prices.parquet"
+    tickers = ["AGTHX", *etfs.tickers(), "IEF", "LQD"]
+    fake_prices(tickers, "2000-01-01", "2030-01-01").to_parquet(snapshot)
+    monkeypatch.setenv("FUNDCLONE_SNAPSHOT", str(snapshot))
+
+    def limited(*args, **kwargs):
+        raise data.YahooRateLimitError(["AGTHX"])
+
+    monkeypatch.setattr(data, "fetch_prices", limited)
+    monkeypatch.setattr(data, "fetch_info", limited)
+    app.query_params["ticker"] = "AGTHX"
+    app.run()
+    assert not app.exception
+    assert any("snapshot of" in element.value for element in app.caption)
+
+
+def test_a_linked_expense_ratio_the_form_cannot_show_is_ignored(app):
+    app.query_params.update(ticker="FUND", ter="9.995")
+    app.run()
+    assert not app.exception
+    assert widget(app.number_input, "Expense ratio, % a year (optional)").value is None
+
+
+def test_an_expense_ratio_entered_for_one_fund_is_not_used_for_the_next(app):
+    app.query_params.update(ticker="FUND", ter="1.5")
+    app.run()
+    widget(app.text_input, "Ticker").set_value("OTHER")
+    next(button for button in app.button if button.label == "Build the clone").click().run()
+    assert not app.exception
+    assert not any("is the one entered" in element.value for element in app.caption)
+
+
+def test_an_isin_lookup_during_a_rate_limit_says_so(app, monkeypatch):
+    def limited(isin, limit=5):
+        raise data.YahooRateLimitError()
+
+    monkeypatch.setattr(data, "yahoo_symbols", limited)
+    app.run()
+    widget(app.text_input, "ISIN").set_value("de0009848119").run()
+    assert not app.exception
+    assert any("limiting requests" in element.value for element in app.caption)
 
 
 def test_a_link_can_set_the_expense_ratio(app):

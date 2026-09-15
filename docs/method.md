@@ -188,14 +188,14 @@ sales load and before tax (`fundclone/costs.py`).
   it plays no part in switching.
 - **Switching.** Selling the fund realises gains $A \cdot G$ and costs $A \cdot G \cdot \tau$
   in tax at a rate $\tau$, plus $A \cdot d$ where a deferred sales charge $d$ is still due.
-  The yearly saving is $A$ times the fund's expense ratio minus the clone's, less the tax
-  at the same rate on the gains the clone's own trading realised out of sample, with each
-  ETF's average cost as its basis (a median 6.6% of its value a year on the benchmark).
-  The cost takes cost over saving years to earn back. Most of the tax on selling is paid
-  earlier rather than extra, since selling later would owe it too; in a tax-deferred
-  account there is none. The fund's own capital-gain distributions are taxed too, but
-  Yahoo Finance does not report them reliably, so they are left out, which leans against
-  the clone.
+  The yearly saving is $A$ times the fund's expense ratio minus the clone's, and the cost
+  takes cost over saving years to earn back. Most of the tax on selling is paid earlier
+  rather than extra, since selling later would owe it too; in a tax-deferred account there
+  is none. The app also shows the tax on the gains the clone's own trading realises, with
+  each ETF's average cost as its basis, over its first $Y$ years out of sample, when it
+  starts with no gains as someone switching now would. That tax, too, is mostly paid
+  earlier rather than extra, and the fund pays out its own realised gains, which Yahoo
+  Finance does not report reliably; so neither is in the payback.
 - **Trading.** The app sets the clone's turnover, with buys and sells counted once each,
   against the turnover the fund reports.
 
@@ -215,6 +215,10 @@ sales load and before tax (`fundclone/costs.py`).
   2017 and 2018 to 2026 separately gives the same ranking (the clone tracks more closely
   than the hand-picked ETFs and than the closest single ETF in both), but only data after
   September 2026 can test other years.
+- The data checks of section 2 look at a fund's whole price history, so they can leave out
+  a price that someone at the time would have seen for a day or two, or end the figures a
+  few days early. They never change a price, and the fund's and the ETFs' returns are
+  merged over the same days; in the benchmark they drop five prices.
 
 ## 10. Limitations
 

@@ -377,7 +377,7 @@ def _cleaned(
             f"({_dates(errors)})."
         )
     if fund_like:
-        merged = drop_reversed_moves(checked, market)
+        merged = drop_reversed_moves(checked, etf_prices)
         late = checked.index.difference(merged.index)
         if len(late):
             notes.append(
@@ -407,7 +407,7 @@ def _cleaned(
             f"{label}'s price moved {move:+.0%} on {date:%Y-%m-%d}, close to what an unadjusted "
             f"{kind} would do; earlier prices are adjusted for it."
         )
-    if found := unadjusted_distribution(cleaned, market):
+    if found := unadjusted_distribution(cleaned, etf_prices):
         date, move, etf, etf_move = found
         cleaned = cleaned[cleaned.index < date]
         notes.append(

@@ -54,6 +54,7 @@ TODAY = dt.date.today()
 WINDOW = (63, 756, 21)  # slider range and step, trading days
 ROLLING = (24, 60, 6)  # months
 FEE_GROWTH = 0.06  # yearly growth before fees assumed when adding up fees over a horizon
+MAX_FEE = 9.99  # the highest expense ratio, in percent, that can be entered or linked
 DEFAULTS = {
     "mode": "Fund",
     "target": "AGTHX",
@@ -231,6 +232,17 @@ info_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(fetch_
 symbols_cached = st.cache_data(ttl=DAY, max_entries=256, show_spinner=False)(yahoo_symbols)
 
 
+def info_or_snapshot(ticker: str) -> dict:
+    """A symbol's details from Yahoo Finance or, while Yahoo limits requests for a symbol
+    the local snapshot has prices for, none, so that the snapshot can still be used."""
+    try:
+        return info_cached(ticker)
+    except YahooRateLimitError:
+        if ticker in snapshot():
+            return {}
+        raise
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
 def analyse(
     mode,
@@ -271,7 +283,7 @@ def analyse(
         expense_ratio=None if expense_ratio is None else expense_ratio / 100,
         price_loader=prices_cached,
         factor_loader=factors_cached,
-        info_loader=info_cached,
+        info_loader=info_or_snapshot,
     )
 
 
@@ -340,7 +352,7 @@ def _cost(text: str) -> float:
 
 def _fee(text: str) -> float:
     value = float(text)
-    if not 0 <= value < 10:
+    if not 0 <= value <= MAX_FEE:
         raise ValueError(text)
     return value
 
@@ -445,8 +457,9 @@ def settings_form(initial: dict) -> dict | None:
             expense_ratio = st.number_input(
                 "Expense ratio, % a year (optional)",
                 min_value=0.0,
-                max_value=9.99,
+                max_value=MAX_FEE,
                 value=initial["expense_ratio"] if initial["mode"] == "Fund" else None,
+                key=f"expense-ratio-{initial['target']}",  # a new fund starts empty
                 step=0.05,
                 format="%.2f",
                 placeholder="from Yahoo Finance",
@@ -530,6 +543,9 @@ def settings_form(initial: dict) -> dict | None:
             )
         if not st.form_submit_button("Build the clone", type="primary", width="stretch"):
             return None
+    new_fund = target.strip().upper() != initial["target"].strip().upper()
+    if new_fund and expense_ratio is not None and expense_ratio == initial["expense_ratio"]:
+        expense_ratio = None  # entered for the fund analysed before, not for this one
     return {
         "mode": mode,
         "target": target.strip(),
@@ -554,6 +570,9 @@ def show_symbols(isin: str) -> None:
     """The Yahoo Finance symbols listed for an ISIN, as candidates to check."""
     try:
         found = [quote for quote in symbols_cached(isin) if is_ticker(quote["symbol"])]
+    except YahooRateLimitError:  # not cached, so the next try asks Yahoo again
+        st.caption("Yahoo Finance is limiting requests right now. Try again in a minute or two.")
+        return
     except ValueError:
         st.caption(f"{plain(isin)} is not a valid ISIN.")
         return
@@ -568,23 +587,18 @@ def show_symbols(isin: str) -> None:
             for quote in found
         )
     )
-    checked = any(quote.get("days") is not None for quote in found)
-    none_usable = checked and not any(map(usable, found))
     st.caption(
         f"Yahoo Finance symbols for {plain(isin)}. Check the name and share class before "
         "using one: Yahoo's search can list another class of the same fund."
-        + (" None of them has the 19 months of prices a clone needs." if none_usable else "")
+        + ("" if any(map(usable, found)) else " None has the 19 months of prices a clone needs.")
     )
 
 
 def price_history(quote: dict) -> str:
     """How many prices Yahoo Finance has for a symbol from yahoo_symbols, in words."""
-    days = quote.get("days")
-    if days is None:
-        return "prices not checked"
     if usable(quote):
         return f"prices since {quote['prices_from']}"
-    return "too few prices for a clone" if days else "no prices"
+    return "too few prices for a clone" if quote.get("days") else "no prices"
 
 
 def factsheet_lookup() -> None:
@@ -808,9 +822,7 @@ def render_switching(a: Analysis, amount: float, years: int) -> None:
                 "load, so switching does not save it."
             )
         fees = a.expense_ratio - a.clone_expense_ratio
-        realised = max(a.replication.annual_realised_gains, 0.0)
-        drag = realised * rate  # the yearly tax on the gains the clone's own trading realises
-        result = switching(amount, gain, rate, fees - drag, exit_charge)
+        result = switching(amount, gain, rate, fees, exit_charge)
         lines = []
         if result["cost"] > 0:
             parts = []
@@ -822,13 +834,7 @@ def render_switching(a: Analysis, amount: float, years: int) -> None:
                 parts.append(f"{result['exit_charge']:,.0f} USD in deferred sales charge")
             lines.append(f"Selling the fund now would cost {' and '.join(parts)}.")
         if fees > 0:
-            saving = f"The clone's lower fees save about {amount * fees:,.0f} USD a year"
-            if drag > 0:
-                saving += (
-                    f", less about {amount * drag:,.0f} USD of tax on the gains its own trading "
-                    "realises"
-                )
-            lines.append(saving + ".")
+            lines.append(f"The clone's lower fees save about {amount * fees:,.0f} USD a year.")
         else:
             lines.append("The clone costs no less than the fund in fees.")
         if result["cost"] > 0:
@@ -850,14 +856,19 @@ def render_switching(a: Analysis, amount: float, years: int) -> None:
                 "IRA, selling the fund costs no tax."
             )
         st.caption(" ".join(lines))
+        rep = a.replication
+        span = min(years, (rep.returns.index[-1] - rep.weights.index[0]).days / 365.25)
+        realised = max(rep.realised_gains_per_year(years), 0.0)
         reported = f"the {a.turnover:.0%} the fund reports" if a.turnover else "what the fund does"
         st.caption(
-            f"The clone trades about {a.replication.annual_turnover / 2:.0%} of its value a year, "
-            f"counting buys and sells once each, against {reported}. Out of sample its sales "
-            f"realised gains of about {realised:.1%} of its value a year, at average cost. The "
-            "fund's own capital-gain distributions are taxed too, but Yahoo Finance does not "
-            "report them reliably, so the saving above leaves them out, which leans against "
-            "the clone. Quarterly rebalancing under Advanced roughly halves the clone's trading."
+            f"The clone trades about {rep.annual_turnover / 2:.0%} of its value a year, counting "
+            f"buys and sells once each, against {reported}. In a taxable account its sales "
+            f"realise gains too: in its first {span:.0f} years out of sample, starting with "
+            f"none, about {realised:.1%} of its value a year, or {amount * realised * rate:,.0f} "
+            "USD of tax a year at your rate. Like the tax on selling the fund, most of it is "
+            "paid earlier rather than extra, and the fund pays out its own realised gains too, "
+            "which Yahoo Finance does not report reliably, so neither is in the payback above. "
+            "Quarterly rebalancing under Advanced roughly halves the clone's trading."
         )
 
 
@@ -1109,7 +1120,8 @@ def main() -> None:
         return
     try:
         with st.spinner("Loading prices and building the clone"):
-            analysis = analyse(**params)
+            # settings a session stored before a new one was added take its default
+            analysis = analyse(**{**DEFAULTS, **params})
     except Exception as exc:  # data gaps, bad tickers and bad portfolios surface as messages
         st.error(f"Could not build the clone: {plain(exc)}")
         return
