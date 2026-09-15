@@ -25,9 +25,10 @@ much of the fund you get from the clone and what the manager adds on top after f
 - **What switching would cost.** The tax on gains you would realise by selling the fund,
   the tax on the gains the clone's own trading realises, how long the lower fees take to
   earn it back, and a warning for share classes that charge a sales load.
-- **For investors in the EU.** 47 UCITS ETFs and a gold ETC on Xetra as a second set of
-  building blocks, for funds priced in European hours, and a lookup that finds a European
-  fund's Yahoo Finance symbol from its ISIN.
+- **For investors in the EU.** For each ETF of a clone, a UCITS ETF that follows the same
+  or a similar index, with its ISIN; a second set of 47 UCITS ETFs and a gold ETC on
+  Xetra for funds priced in European hours; and a lookup that finds a European fund's
+  Yahoo Finance symbol from its ISIN.
 - **An X-ray.** Fama-French factor exposures with Newey-West errors, how they drifted
   over time, and the single ETF that comes closest to the fund.
 
@@ -216,8 +217,9 @@ development, and all of it, benchmark included, is open source under the MIT lic
   funds, whose clones keep about 15% in T-bills), worth about 0.06 percentage points a
   year of the gap in the median; for a fund like ARKK, with a beta of 1.45 to its clone,
   it is much more.
-- Investors in the EU generally cannot buy the US-listed ETFs. The UCITS set suits funds
-  priced in European hours. For funds priced in US hours its Xetra prices, set four and a
+- Investors in the EU generally cannot buy the US-listed ETFs. For 64 of the 81 the app
+  lists a UCITS twin on the same or a similar index, but a clone built from the twins was
+  not tested. The UCITS set suits funds priced in European hours. For funds priced in US hours its Xetra prices, set four and a
   half hours earlier, add timing noise: over 2018 to 2026 the benchmark's median weekly
   tracking error is 8.0% with UCITS ETFs against 3.2% with US-listed ones, and 8.0%
   against 1.1% for index funds (see benchmarks/).
@@ -250,8 +252,6 @@ development, and all of it, benchmark included, is open source under the MIT lic
 
 ## Roadmap
 
-- UCITS counterparts for the US building blocks, so that the clone of a US fund can be
-  bought in the EU.
 - Look-through of US fund holdings from SEC N-PORT filings.
 - Screening many funds at once.
 

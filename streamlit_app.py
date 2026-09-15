@@ -174,6 +174,12 @@ funds priced in European hours. For funds priced in US hours, Xetra's close four
 half hours earlier adds timing noise to the weekly figures, so the US-listed ETFs give the
 truer picture there.
 
+**UCITS twins.** For a clone of US-listed ETFs, the Clone tab can list, for each ETF, a
+UCITS ETF that investors in the EU can buy in its place: one that follows the same index,
+sometimes capped differently, or a similar one, with its ISIN and total expense ratio from
+justETF. 64 of the {len(etfs.tickers())} ETFs have one. The clone itself is fitted and
+scored with the US-listed ETFs; a clone built from the twins was not tested.
+
 **Data.** Prices and fund expense ratios from Yahoo Finance; factors and the T-bill rate
 from the Kenneth French data library, which lags by one to two months. ETF expense
 ratios as of {etfs.EXPENSE_RATIOS_AS_OF}. Yahoo Finance data is for personal,
@@ -907,6 +913,32 @@ def render_orders(a: Analysis, params: dict, allocation: pd.DataFrame, amount: f
         )
 
 
+def render_twins(a: Analysis) -> None:
+    """The UCITS twins of the clone's US-listed ETFs, for investors in the EU."""
+    if not st.toggle(
+        "UCITS twins for investors in the EU",
+        help="For each ETF, a UCITS ETF that follows the same or a similar index, which "
+        "investors in the EU can buy where US-listed ETFs are not offered to them.",
+    ):
+        return
+    show_table(a.twins(), {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
+    cover = etfs.twin_coverage(a.current_weights.to_dict())
+    cost = (
+        f"; the twins cost {cover['expense_ratio']:.2%} a year"
+        if cover["same"] + cover["similar"]
+        else ""
+    )
+    st.caption(
+        "Names, ISINs and total expense ratios from justETF "
+        f"({etfs.TWINS_AS_OF}). Of the clone's invested weight, {cover['same']:.0%} has a "
+        f"twin on the same index, sometimes capped differently, {cover['similar']:.0%} one "
+        f"on a similar index and {cover['none']:.0%} none{cost}. The clone was fitted and "
+        "scored with the US-listed ETFs, whose prices are set together with the fund's. The "
+        "twins follow their indices in other trading hours and currencies, and a clone built "
+        "from them was not tested here."
+    )
+
+
 def render_clone(a: Analysis, params: dict, mode: str) -> None:
     rep = a.replication
     cfg = rep.config
@@ -915,11 +947,18 @@ def render_clone(a: Analysis, params: dict, mode: str) -> None:
     with left:
         st.markdown(f"**The clone today**, traded {rep.weights.index[-1]:%d %b %Y}")
         show_table(allocation, {"Weight": "{:.1%}", "Expense ratio": "{:.2%}"}, hide_index=True)
-        st.caption(
-            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on "
-            f"{cfg.frequency} returns of the past {cfg.window} trading days. "
-            f"Turnover {rep.annual_turnover:.1f}× a year at {cfg.cost_bps:g} bp per trade."
+        fitted = (
+            f"daily returns, summed over {cfg.overlap} days,"
+            if cfg.frequency == "daily" and cfg.overlap > 1
+            else f"{cfg.frequency} returns"
         )
+        st.caption(
+            f"Rebalanced {'monthly' if cfg.rebalance == 'M' else 'quarterly'} on {fitted} "
+            f"of the past {cfg.window} trading days. Turnover {rep.annual_turnover:.1f}× a "
+            f"year at {cfg.cost_bps:g} bp per trade."
+        )
+        if params["etf_set"] == etfs.DEFAULT_SET and not a.current_weights.empty:
+            render_twins(a)
     with right:
         st.markdown("**What it costs**")
         amount_col, years_col = st.columns([3, 2])

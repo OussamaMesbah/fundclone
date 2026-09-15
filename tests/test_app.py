@@ -235,3 +235,11 @@ def test_a_link_can_choose_the_ucits_etfs(app):
     blocks = widget(app.multiselect, "Building blocks")
     assert "World equity" in blocks.value and "US equity" not in blocks.value
     assert any("timing noise" in element.value for element in app.caption)
+
+
+def test_the_clone_tab_can_list_ucits_twins(app):
+    app.query_params["ticker"] = "FUND"
+    app.run()
+    widget(app.toggle, "UCITS twins for investors in the EU").set_value(True).run()
+    assert not app.exception
+    assert any("not tested here" in element.value for element in app.caption)
