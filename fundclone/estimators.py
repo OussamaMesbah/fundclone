@@ -10,6 +10,11 @@ window ensembles and more; see benchmarks/), each tuned on 21 funds and checked 
 others. Their median tracking errors differed by at most 0.15 percentage points, so the
 choice rests on turnover, stability and simplicity: with a 2% minimum position, this one
 trades about half as much as plain least squares for about the same tracking error.
+
+Since 0.6 it is fitted on overlapping three-day returns (ReplicationConfig.overlap) with a
+stronger pull towards last month's weights. Daily fund prices that follow the market a
+little late had made the clone hold too little risk: on the dev funds the funds' beta to
+their clones fell from 1.04 to 1.01, with the same median tracking error and less trading.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from scipy.optimize import nnls
 from fundclone.replication import Estimator, ReplicationConfig, constrained_least_squares
 
 HALF_LIFE_DAYS = 63  # recent days count more: an observation's weight halves every 63 days
-STABILITY = 0.1  # pull towards last month's weights, in units of the average ETF variance
+STABILITY = 0.2  # pull towards last month's weights, in units of the average ETF variance
 STICKINESS = 0.25  # forward selection favours ETFs already held by this share of the gain
 SCREEN = 8  # candidates refitted per step of forward selection
 _BUDGET_ROW = 1e3  # weight of the sum(w) + cash = 1 row in the least-squares system

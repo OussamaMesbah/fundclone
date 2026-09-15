@@ -202,6 +202,19 @@ def test_annual_turnover_counts_calendar_years():
     assert result.annual_turnover == pytest.approx(0.4 / years)
 
 
+def test_sales_realise_gains_at_average_cost():
+    index = pd.bdate_range("2024-01-01", periods=4)
+    weights = pd.DataFrame({"A": [1.0, 0.5], "B": [0.0, 0.5]}, index=[index[0], index[2]])
+    returns = pd.DataFrame({"A": [0.0, 0.2, 0.0, 0.0], "B": 0.0}, index=index)
+    sim = simulate_clone(weights, returns, pd.Series(0.0, index=index))
+    # A, bought for 1, grows to 1.2; selling half of it realises half of the 0.2 gain
+    assert sim.realised.tolist() == pytest.approx([0.0, 0.1 / 1.2])
+    config = ReplicationConfig()
+    result = ReplicationResult(weights, sim.returns, sim.turnover, config, sim.realised)
+    years = (index[-1] - index[0]).days / 365.25
+    assert result.annual_realised_gains == pytest.approx(0.1 / 1.2 / years)
+
+
 def test_custom_estimator_gets_the_previous_weights():
     assets, rf = market()
     seen = []

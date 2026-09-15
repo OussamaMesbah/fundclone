@@ -22,6 +22,7 @@ from fundclone.data import (
     compounded_rate,
     daily_returns,
     drop_price_errors,
+    drop_reversed_moves,
     drop_stale_prices,
     fetch_info,
     fetch_prices,
@@ -144,6 +145,7 @@ def run_analysis(
     factor_loader: Callable[..., pd.DataFrame] = load_french_factors,
     info_loader: Callable[[str], dict] = fetch_info,
     etf_set: str = etfs.DEFAULT_SET,
+    expense_ratio: float | None = None,
 ) -> Analysis:
     """Clone a fund (a Yahoo Finance ticker) or a portfolio ({ticker: weight}) with ETFs.
 
@@ -154,9 +156,13 @@ def run_analysis(
     frequency of "auto" becomes weekly when anything is priced outside US trading hours.
     The loaders can be replaced by cached or offline versions with the same signatures; a
     price loader can pass notes for the user on in the returned frame's attrs["notes"].
+    `expense_ratio`, a yearly decimal, replaces the fund's expense ratio from Yahoo Finance,
+    which reports none for many European funds; portfolios have none.
     """
     config = replication or ReplicationConfig()
     notes: list[str] = []
+    if expense_ratio is not None and not 0 <= expense_ratio < 0.1:
+        raise ValueError("The expense ratio must lie between 0% and 10% a year.")
     if isinstance(target, str):
         label, holdings = target.strip().upper(), None
         members = [label]
@@ -260,6 +266,13 @@ def run_analysis(
         fund_prices = _cleaned(member_prices[label], prices[universe], label, notes, fund_like)
         name = infos[label].get("name") or label
         expense = infos[label].get("expense_ratio")
+        if expense_ratio is not None:
+            reported = f"{expense:.2%}" if expense is not None else "none"
+            notes.append(
+                f"The expense ratio of {expense_ratio:.2%} is the one entered; Yahoo Finance "
+                f"reports {reported}."
+            )
+            expense = expense_ratio
         turnover = infos[label].get("turnover")
         if hint := sales_charge_hint(name):
             notes.append(hint)
@@ -363,6 +376,17 @@ def _cleaned(
             f"back within days without a matching market move; {verdict} left out "
             f"({_dates(errors)})."
         )
+    if fund_like:
+        merged = drop_reversed_moves(checked, market)
+        late = checked.index.difference(merged.index)
+        if len(late):
+            notes.append(
+                f"{label}'s {_count(len(late), 'price')} on {_dates(late)} broke away from its "
+                "closest ETF and came back within two days, as when a price is stale or Yahoo "
+                "Finance books a distribution a day late; "
+                f"{'it is' if len(late) == 1 else 'they are'} left out."
+            )
+        checked = merged
     cleaned = drop_stale_prices(checked, market)
     stale = len(checked) - len(cleaned)
     if stale:

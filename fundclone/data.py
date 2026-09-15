@@ -223,10 +223,10 @@ RATE_LIMIT_WAITS = (2.0, 5.0)  # seconds before each new try while Yahoo limits 
 class YahooRateLimitError(ValueError):
     """Yahoo Finance refused requests because too many arrived in a short time."""
 
-    def __init__(self, tickers: Iterable[str] = ()) -> None:
+    def __init__(self, tickers: Iterable[str] = (), what: str = "prices") -> None:
         tickers = list(tickers)
         shown = ", ".join(tickers[:5]) + (" and others" if len(tickers) > 5 else "")
-        detail = f", so there are no prices for {shown}" if tickers else ""
+        detail = f", so there are no {what} for {shown}" if tickers else ""
         super().__init__(
             f"Yahoo Finance is limiting requests right now{detail}. Try again in a minute or two."
         )
@@ -348,20 +348,43 @@ def _download_closes(tickers: list[str]) -> dict[str, pd.Series]:
     return {t: close[t].dropna() for t in close.columns if close[t].notna().any()}
 
 
+def _ticker_info(ticker: str) -> dict:
+    """yfinance's facts about a symbol, or {} if Yahoo does not know it. While Yahoo limits
+    requests, the lookup is repeated after each of RATE_LIMIT_WAITS, and YahooRateLimitError
+    is raised if the limit outlasts them."""
+    log = logging.getLogger("yfinance")
+    for wait in (*RATE_LIMIT_WAITS, None):
+        errors = _LoggedErrors()
+        log.addHandler(errors)
+        try:
+            raw = yf.Ticker(ticker).info or {}
+        except YFRateLimitError:
+            raw = {}
+            errors.messages.append("YFRateLimitError")
+        except Exception:  # unknown symbols and network trouble surface as assorted errors
+            raw = {}
+        finally:
+            log.removeHandler(errors)
+        if raw or not errors.rate_limited:
+            return raw
+        if wait is not None:
+            time.sleep(wait)
+    raise YahooRateLimitError([ticker], "fund details")
+
+
 def fetch_info(ticker: str) -> dict:
     """Name, currency, exchange time zone, quote type, net expense ratio (decimal) and
     reported holdings turnover of a Yahoo Finance symbol.
 
-    Values Yahoo does not report are None. Cached for a week.
+    Values Yahoo does not report are None. Cached for a week. A rate limit that outlasts
+    the retries raises YahooRateLimitError instead of returning nothing: without its
+    currency, a fund priced in euros would be read as priced in dollars.
     """
     path = _cache_file("info", ticker, ".json")
     cached = _cached(path, INFO_MAX_AGE, lambda p: json.loads(p.read_text()))
     if isinstance(cached, dict) and INFO_FIELDS <= cached.keys():
         return cached  # an older cache without every field is fetched again
-    try:
-        raw = yf.Ticker(ticker).info or {}
-    except Exception:  # unknown symbols and rate limits surface as assorted errors
-        raw = {}
+    raw = _ticker_info(ticker)
     ratio = raw.get("netExpenseRatio")
     turnover = raw.get("annualHoldingsTurnover")
     info = {
@@ -383,17 +406,55 @@ def fetch_info(ticker: str) -> dict:
     return info
 
 
-def yahoo_symbols(isin: str, limit: int = 5) -> list[dict[str, str]]:
-    """The Yahoo Finance symbols that Yahoo's search lists for an ISIN, with name, type and
-    exchange, or an empty list.
+MIN_HISTORY_DAYS = 400  # about the 19 months of prices a first clone needs
+
+
+def yahoo_symbols(isin: str, limit: int = 5) -> list[dict]:
+    """The Yahoo Finance symbols that Yahoo's search lists for an ISIN, with name, type,
+    exchange, the number of daily prices Yahoo has ("days", None if that could not be
+    checked) and the first of them ("prices_from"), those with enough prices for a clone
+    first. If none has enough, the search is repeated with the first result's name, which
+    finds other listings of the same fund.
 
     The search covers many European funds but not all, and can return another share class
     of the same fund, so the results are candidates to check, not an answer.
     """
     if not is_valid_isin(isin):
         raise ValueError(f"{isin!r} is not a valid ISIN.")
+    found = _with_history(_search(isin, limit))
+    if found and not any(map(usable, found)) and found[0]["name"]:
+        known = {quote["symbol"] for quote in found}
+        more = [quote for quote in _search(found[0]["name"], limit) if quote["symbol"] not in known]
+        found += _with_history(more)
+    return sorted(found, key=lambda quote: not usable(quote))
+
+
+def usable(quote: dict) -> bool:
+    """Whether Yahoo Finance has enough prices of a symbol from yahoo_symbols for a clone."""
+    return (quote.get("days") or 0) >= MIN_HISTORY_DAYS
+
+
+def _with_history(quotes: list[dict]) -> list[dict]:
+    """The quotes with the number of daily prices Yahoo has for each and the first date.
+    The prices go into the cache, so analysing one of the symbols afterwards is quick."""
+    if not quotes:
+        return quotes
     try:
-        quotes = yf.Search(isin, max_results=limit).quotes
+        prices = fetch_prices([quote["symbol"] for quote in quotes], "1900-01-01", "2100-01-01")
+    except YahooRateLimitError:
+        return [{**quote, "days": None, "prices_from": None} for quote in quotes]
+    checked = []
+    for quote in quotes:
+        series = prices.get(quote["symbol"], pd.Series(dtype=float)).dropna()
+        first = f"{series.index[0]:%Y-%m-%d}" if len(series) else None
+        checked.append({**quote, "days": len(series), "prices_from": first})
+    return checked
+
+
+def _search(query: str, limit: int) -> list[dict]:
+    """The symbols Yahoo's search lists for `query`, or [] if the search fails."""
+    try:
+        quotes = yf.Search(query, max_results=limit).quotes
     except Exception:  # rate limits and network trouble surface as assorted errors
         return []
     return [
@@ -593,6 +654,54 @@ def unadjusted_distribution(
         if drop > limit and residual.loc[recent[i + 1 :]].sum() < drop / 2:
             return date, float(fund[date]), etf, float(moves[date])
     return None
+
+
+REVERSAL_FLOOR = 0.04  # smaller breaks from the closest ETF that come back are market noise
+
+
+def drop_reversed_moves(
+    prices: pd.Series,
+    market_returns: pd.DataFrame,
+    floor: float = REVERSAL_FLOOR,
+    days: int = 2,
+) -> pd.Series:
+    """Remove prices that break away from the fund's closest ETF and come back within days.
+
+    Yahoo Finance sometimes books a distribution a day late: the price falls on the
+    ex-date, the adjustment arrives the next day, and the fund seems to lose the payout and
+    get it back (AMCPX on 19 December 2014: -5%, then +6%). A return that differs from what
+    the most correlated reference ETF predicts by more than `floor` and by ERROR_SIGMAS
+    typical deviations, and that the next `days` returns undo by at least 80%, is such an
+    artefact; the prices in between are dropped, which merges the days. The same catches
+    prices that stay unchanged for a day or two while the market moves sharply, and fund
+    prices set hours before a crash day's close. Only ETFs with returns on nine in ten of
+    the fund's days can be the reference.
+    """
+    fund = (prices / prices.shift(1) - 1).iloc[1:]
+    if len(fund) < 252:
+        return prices
+    market = market_returns.reindex(fund.index)
+    reference = market.loc[:, market.notna().mean() >= 0.9]
+    correlations = reference.corrwith(fund).dropna()
+    if correlations.empty:
+        return prices
+    moves = market[str(correlations.idxmax())]
+    residual = (fund - fund.cov(moves) / moves.var() * moves).to_numpy()
+    limit = max(floor, ERROR_SIGMAS * _ROBUST_SIGMA * float(np.nanmedian(np.abs(residual))))
+    bad = np.zeros(len(prices), dtype=bool)
+    i = 0
+    while i < len(residual):
+        move = residual[i]
+        if np.isfinite(move) and abs(move) > limit:
+            undone = -np.sign(move) * np.nancumsum(residual[i + 1 : i + 1 + days])
+            back = np.flatnonzero(undone >= 0.8 * abs(move))
+            if len(back):
+                # return i moves price i + 1; the price is right again after return i + 1 + k
+                bad[i + 1 : i + 2 + back[0]] = True
+                i += 2 + back[0]
+                continue
+        i += 1
+    return prices[~bad]
 
 
 def daily_returns(prices: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:

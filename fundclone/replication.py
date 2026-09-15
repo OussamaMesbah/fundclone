@@ -37,7 +37,9 @@ class ReplicationConfig:
     max_etfs: cap on the number of ETFs in the clone (None: no cap).
     min_weight: positions below this weight are dropped and the rest refitted.
     overlap: fit daily data on overlapping sums of this many days (1: plain daily
-        returns). Multi-day returns absorb prices set at different times of day.
+        returns). Multi-day returns absorb prices set at different times of day, and fund
+        prices that follow the market a little late, which on single days make the fund
+        look less sensitive to the ETFs than it is and the clone hold too little risk.
 
     max_etfs, min_weight and overlap apply to long-only, unlevered clones, which use the
     estimators in fundclone.estimators; long/short or levered clones use plain least
@@ -54,7 +56,7 @@ class ReplicationConfig:
     cost_bps: float = 5.0
     max_etfs: int | None = None
     min_weight: float = 0.02
-    overlap: int = 1
+    overlap: int = 3
 
     def __post_init__(self) -> None:
         counts = (self.window, self.execution_lag, self.overlap)
@@ -89,6 +91,7 @@ class ReplicationResult:
     returns: pd.Series  # daily clone returns after the first trade date
     turnover: pd.Series  # traded value / NAV on each trade date, starting from all cash
     config: ReplicationConfig
+    realised: pd.Series | None = None  # gains realised on each trade date / NAV, average cost
 
     @property
     def cash(self) -> pd.Series:
@@ -104,10 +107,21 @@ class ReplicationResult:
         days = (self.returns.index[-1] - self.weights.index[0]).days
         return float(self.turnover.iloc[1:].sum() / (max(days, 1) / 365.25))
 
+    @property
+    def annual_realised_gains(self) -> float:
+        """Gains the clone's sales realised per calendar year as a share of its value, net of
+        losses, with each ETF's average cost as its basis: what a taxable account would owe
+        tax on. The initial purchase realises nothing."""
+        if self.realised is None or self.realised.empty:
+            return 0.0
+        days = (self.returns.index[-1] - self.weights.index[0]).days
+        return float(self.realised.sum() / (max(days, 1) / 365.25))
+
 
 class Simulation(NamedTuple):
     returns: pd.Series
     turnover: pd.Series
+    realised: pd.Series | None = None  # gains realised on each trade date, a share of NAV
 
 
 # An estimator maps the trailing excess returns of the fund (y, length T) and of the ETFs
@@ -187,7 +201,9 @@ def simulate_clone(
     positions pay the spread as a borrow fee. Each trade costs `cost_bps` of the traded
     value. The first return is for the day after the first trade and includes the cost
     of building the initial portfolio. Missing asset returns (before an ETF started
-    trading, when its weight is zero) count as zero.
+    trading, when its weight is zero) count as zero. Each trade also records the gains it
+    realises as a share of the portfolio, with the average cost of each long position as
+    its basis.
     """
     assets = list(target_weights.columns)
     returns = asset_returns[assets].fillna(0.0)
@@ -198,8 +214,9 @@ def simulate_clone(
     start = target_weights.index[0]
 
     holdings = np.zeros(len(assets))
+    basis = np.zeros(len(assets))  # what the long positions cost, at average cost
     cash = nav = 1.0
-    dates, daily, turnover = [], [], {}
+    dates, daily, turnover, realised = [], [], {}, {}
     for date, r, f in zip(returns.index, returns.to_numpy(), rf.to_numpy(), strict=True):
         if date < start:
             continue
@@ -211,6 +228,12 @@ def simulate_clone(
         if date in targets:
             target = targets[date] * value
             traded = np.abs(target - holdings).sum()
+            held, wanted = np.maximum(holdings, 0.0), np.maximum(target, 0.0)
+            sold = np.divide(
+                held - np.minimum(held, wanted), held, out=np.zeros_like(held), where=held > 0
+            )  # the share of each long position sold
+            realised[date] = float(sold @ (held - basis)) / value
+            basis = basis * (1 - sold) + np.maximum(wanted - held, 0.0)
             cash = value - target.sum() - cost * traded
             holdings = target
             turnover[date] = traded / value
@@ -222,6 +245,7 @@ def simulate_clone(
     return Simulation(
         pd.Series(daily, index=pd.DatetimeIndex(dates), name="clone"),
         pd.Series(turnover, name="turnover"),
+        pd.Series(realised, name="realised"),
     )
 
 
@@ -292,4 +316,6 @@ def walk_forward(
     simulation = simulate_clone(
         target_weights, data[assets], data["__rf__"], config.financing_spread, config.cost_bps
     )
-    return ReplicationResult(target_weights, simulation.returns, simulation.turnover, config)
+    return ReplicationResult(
+        target_weights, simulation.returns, simulation.turnover, config, simulation.realised
+    )

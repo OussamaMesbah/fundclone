@@ -5,9 +5,17 @@
 ### Added
 - The benchmark reports the closest single ETF of every fund, as the app's verdict does, and
   how many active funds came out ahead of or behind their clone and that ETF after fees, by
-  more than noise or not. The README and benchmarks/README.md report the result, and that
-  the clones hold slightly too little risk (a median 3% in T-bills, a beta of the funds to
-  their clones of 1.03), which flatters the funds by about 0.2 points a year in the median.
+  more than noise or not, over the whole period or any part of it (`--eval-end`). The
+  README and benchmarks/README.md report the result.
+- An expense ratio can be entered where Yahoo Finance reports none or an outdated one, as
+  for many European funds: in the app, in links (`ter=1.5`), on the command line
+  (`--expense-ratio 1.5`) and in Python (`expense_ratio=0.015`).
+- The ISIN lookup shows how many prices Yahoo has for each symbol and since when, lists
+  those with enough for a clone first, and searches by the fund's name when no listing has
+  prices.
+- "Switching from the fund" counts the tax on the gains the clone's own trading realises,
+  measured at average cost (a median 6.6% of its value a year on the benchmark), and says
+  that the fund's own capital-gain distributions are left out.
 - `benchmarks.compare` compares two benchmark runs fund by fund, with a bootstrap range for
   the median difference, so the README's fund-by-fund figures can be reproduced.
 - A check for distributions Yahoo Finance has not adjusted for yet. When one of a fund's
@@ -16,6 +24,15 @@
   listed no distribution.
 
 ### Changed
+- The clone is fitted on overlapping three-day returns, with a stronger pull towards last
+  month's weights. Daily fund prices that follow the market a little late had made the
+  clones hold too little risk, which flattered the funds by about 0.2 points a year: the
+  funds' median beta to their clones falls from 1.03 to 1.01 on the benchmark. Clones hold
+  7 ETFs instead of 8 and trade about 10% less, for about the same tracking error (0.07
+  points more on the median fresh fund). The fit was chosen on the dev funds by a rule set
+  in advance, and every published number is rescored on the snapshot of 14 September 2026.
+- The benchmark's baseline, the hand-picked ETFs used before 0.3, is fitted to the same
+  cleaned prices as everything else instead of raw prices.
 - "Switching from the fund" no longer counts a front-end load already paid as a saving
   from switching: it is gone whether or not the fund is sold, so it now counts only for new
   money. A deferred sales charge still due on selling is part of the cost of switching.
@@ -23,6 +40,11 @@
   CSV are an illustration, not a recommendation.
 
 ### Fixed
+- Prices that break away from the fund's closest ETF and come back within two days are
+  left out: distributions Yahoo books a day late (AMCPX and AWSHX on 19 December 2014) and
+  prices that stay unchanged while the market moves (FBIOX in May 2025).
+- While Yahoo limits requests, looking up a fund's name, currency and fees is retried and
+  then reported, instead of reading a fund of unknown currency as priced in dollars.
 - The README, docs/method.md and the app's Method tab said Sharpe (1992) fitted the style
   mix once, over the whole history. To measure performance he re-estimated it every month
   from the previous 60 months. They now say so, credit Hasanhodzic and Lo (2007) for

@@ -36,6 +36,17 @@ def _positive(text: str) -> int:
     return int(text)
 
 
+def _fee(text: str) -> float:
+    """A yearly fee in percent, returned as a decimal."""
+    try:
+        value = float(text)
+    except ValueError:
+        value = float("nan")
+    if not 0 <= value < 10:
+        raise argparse.ArgumentTypeError(f"not a percentage between 0 and 10: {text!r}")
+    return value / 100
+
+
 def _asset_classes(
     parser: argparse.ArgumentParser, text: str | None, etf_set: str = etfs.DEFAULT_SET
 ) -> list[str] | None:
@@ -68,6 +79,11 @@ def main(argv: list[str] | None = None) -> None:
         "--end", type=_date, default=dt.date.today().isoformat(), help="last date (default today)"
     )
     parser.add_argument("--max-etfs", type=_positive, help="cap on the number of ETFs in the clone")
+    parser.add_argument(
+        "--expense-ratio",
+        type=_fee,
+        help="the fund's expense ratio in percent, if Yahoo Finance reports none, e.g. 1.5",
+    )
     parser.add_argument(
         "--etf-set",
         type=str.upper,
@@ -117,6 +133,7 @@ def main(argv: list[str] | None = None) -> None:
             frequency=args.frequency,
             region=args.region,
             etf_set=args.etf_set,
+            expense_ratio=args.expense_ratio,
         )
     except ValueError as exc:  # bad tickers, portfolios, settings and too-short histories
         parser.exit(1, f"fundclone: {exc}\n")

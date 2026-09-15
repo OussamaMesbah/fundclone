@@ -30,6 +30,7 @@ from fundclone.data import (
     compounded_rate,
     daily_returns,
     drop_price_errors,
+    drop_reversed_moves,
     drop_stale_prices,
     fx_ticker,
     to_usd,
@@ -121,6 +122,7 @@ def _init(
     clean: bool,
     etf_set: str = etfs.DEFAULT_SET,
     eval_start: pd.Timestamp = EVAL_START,
+    eval_end: pd.Timestamp | None = None,
 ):
     prices = etfs.without_known_errors(pd.read_parquet(prices_path))
     for etf in etfs.ETFS:  # ETFs quoted in another currency, such as UCITS ETFs in EUR
@@ -130,6 +132,7 @@ def _init(
     _state["prices"] = prices[prices.index >= DATA_START]
     _state["etf_set"] = etf_set
     _state["eval_start"] = pd.Timestamp(eval_start)
+    _state["eval_end"] = pd.Timestamp(eval_end) if eval_end else None
     _state["rf"] = pd.read_csv(rf_path, index_col=0, parse_dates=True).iloc[:, 0]
     _state["estimator"] = checked(load_estimator(estimator))
     _state["config"] = config
@@ -151,7 +154,7 @@ def evaluate(fund: dict, universe: str) -> dict:
             market = daily_returns(prices[assets].ffill().reindex(fund_prices.index))
             stock = fund["category"] == "Single stock"  # the app checks funds and ETFs only
             if not stock:
-                fund_prices = drop_price_errors(fund_prices, market)
+                fund_prices = drop_reversed_moves(drop_price_errors(fund_prices, market), market)
             fund_prices = drop_stale_prices(fund_prices, market)
             if not stock:
                 fund_prices = adjust_splits(fund_prices, market)[0]
@@ -168,12 +171,14 @@ def evaluate(fund: dict, universe: str) -> dict:
             raise ValueError(
                 f"clone starts {result.returns.index[0]:%Y-%m-%d}, after {start:%Y-%m-%d}"
             )
-        clone = result.returns[result.returns.index >= start]
+        end = _state["eval_end"] or result.returns.index[-1]
+        clone = result.returns[(result.returns.index >= start) & (result.returns.index <= end)]
         pair = pd.DataFrame({"fund": fund_returns.reindex(clone.index), "clone": clone})
         weekly = weekly_returns(pair)
         monthly = (1 + pair).resample("ME").prod() - 1
-        weights = result.weights[result.weights.index >= start]
+        weights = result.weights[(result.weights.index >= start) & (result.weights.index <= end)]
         years = years_spanned(clone.index)  # calendar years: merged stale days still count
+        trades = (result.turnover.index >= start) & (result.turnover.index <= end)
         # The simplest alternative, as in the app's verdict: the single ETF that tracked the
         # fund best over the scored weeks, chosen with hindsight.
         singles = weekly_returns(etf_returns.reindex(clone.index).dropna(axis=1))
@@ -187,7 +192,8 @@ def evaluate(fund: dict, universe: str) -> dict:
             te_weekly=versus_clone["tracking_error"],
             r2_weekly=versus_clone["r_squared"],
             te_monthly=float((monthly["fund"] - monthly["clone"]).std() * np.sqrt(12)),
-            turnover=float(result.turnover[result.turnover.index >= start].sum() / years),
+            turnover=float(result.turnover[trades].sum() / years),
+            realised=float(result.realised[trades].sum() / years),
             holdings=float((weights.abs() > 0.01).sum(axis=1).mean()),
             gap=versus_clone["active_return"],
             gap_low=gap_low,
@@ -281,6 +287,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--eval-start", default=EVAL_START, help="first date scored (default 2010-01-04)"
     )
+    parser.add_argument("--eval-end", help="last date scored (default: the end of the data)")
     parser.add_argument("--estimator", help="path/to/file.py:function")
     parser.add_argument("--window", type=int, default=252)
     parser.add_argument("--rebalance", choices=["M", "Q"], default="M")
@@ -288,7 +295,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--cost-bps", type=float, default=5.0)
     parser.add_argument("--max-etfs", type=int, help="cap on the number of ETFs")
     parser.add_argument("--min-weight", type=float, default=0.02, help="smallest position kept")
-    parser.add_argument("--overlap", type=int, default=1, help="fit on overlapping n-day sums")
+    parser.add_argument(
+        "--overlap",
+        type=int,
+        default=ReplicationConfig().overlap,
+        help="fit on overlapping n-day sums (default: the app's)",
+    )
     parser.add_argument("--raw", action="store_true", help="keep stale fund prices")
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--out", help="write per-fund results to this CSV")
@@ -324,6 +336,7 @@ def main(argv: list[str] | None = None) -> None:
         not args.raw,
         args.etf_set,
         args.eval_start,
+        args.eval_end,
     )
     with ProcessPoolExecutor(args.jobs, initializer=_init, initargs=initargs) as pool:
         rows = list(pool.map(evaluate, records, [args.universe] * len(records)))

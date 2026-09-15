@@ -120,6 +120,16 @@ def test_switching_shows_the_tax_and_how_long_it_takes_to_earn_it_back(app):
     assert any("600 USD in tax" in text for text in captions)
     assert any("years to earn back" in text for text in captions)
     assert any("trades about" in text and "the 35% the fund reports" in text for text in captions)
+    assert any("realised gains of about" in text for text in captions)
+
+
+def test_a_link_can_set_the_expense_ratio(app):
+    app.query_params.update(ticker="FUND", ter="1.5")
+    app.run()
+    assert not app.exception
+    assert widget(app.number_input, "Expense ratio, % a year (optional)").value == 1.5
+    shown = [element.value.replace("\\", "") for element in app.markdown]
+    assert any("the fund charges 1.50%" in text for text in shown)
 
 
 def test_a_front_end_load_already_paid_does_not_shorten_the_payback(app):
@@ -144,12 +154,31 @@ def test_a_deferred_sales_charge_is_part_of_the_cost_of_selling(app):
 
 
 def test_an_isin_shows_yahoo_symbols_to_choose_from(app, monkeypatch):
-    found = [{"symbol": "HJUA.F", "name": "DWS Top Dividende", "type": "ETF", "exchange": "FRA"}]
+    found = [
+        {
+            "symbol": "0P00000ABC.F",
+            "name": "DWS Top Dividende",
+            "type": "MUTUALFUND",
+            "exchange": "FRA",
+            "days": 2000,
+            "prices_from": "2018-01-02",
+        },
+        {
+            "symbol": "HJUA.F",
+            "name": "DWS Top Dividende",
+            "type": "ETF",
+            "exchange": "FRA",
+            "days": 0,
+            "prices_from": None,
+        },
+    ]
     monkeypatch.setattr(data, "yahoo_symbols", lambda isin, limit=5: found)
     app.run()
     widget(app.text_input, "ISIN").set_value("de0009848119").run()
     assert not app.exception
-    assert any("HJUA.F" in element.value for element in app.markdown)
+    shown = " ".join(element.value for element in app.markdown)
+    assert "HJUA.F" in shown and "no prices" in shown
+    assert "prices since 2018-01-02" in shown
     assert any("share class" in element.value for element in app.caption)
 
 
