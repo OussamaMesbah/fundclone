@@ -86,3 +86,9 @@ def test_an_expense_ratio_is_given_in_percent(monkeypatch):
     with pytest.raises(SystemExit):
         cli.main(["FUND", "--expense-ratio", "1.5"])
     assert seen["expense_ratio"] == pytest.approx(0.015)
+
+
+def test_the_ucits_twins_can_be_listed(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "run_analysis", lambda target, *args, **kwargs: analyse(target))
+    cli.main(["FUND", "--ucits-twins"])
+    assert "UCITS twins for investors in the EU" in capsys.readouterr().out

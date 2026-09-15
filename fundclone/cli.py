@@ -63,6 +63,24 @@ def _asset_classes(
     return chosen
 
 
+def print_twins(a, etf_set: str, width: int) -> None:
+    """The UCITS twin of each ETF of the clone, for investors in the EU."""
+    if etf_set != etfs.DEFAULT_SET:
+        print("\nThe clone already holds UCITS ETFs, so it needs no twins.")
+        return
+    print(f"\nUCITS twins for investors in the EU (from justETF, {etfs.TWINS_AS_OF}):")
+    for _, row in a.twins().iterrows():
+        print(f"  {row['ETF']:<{width}} {row['UCITS twin']}")
+        if row["ISIN"]:
+            print(f"  {'':<{width}} {row['ISIN']}, {row['Expense ratio']:.2%}; {row['Index']}")
+    cover = etfs.twin_coverage(a.current_weights.to_dict())
+    print(
+        f"Same index for {cover['same']:.0%} of the clone, a similar one for "
+        f"{cover['similar']:.0%}, none for {cover['none']:.0%}. The clone was scored with the "
+        "US-listed ETFs; a clone built from the twins was not tested."
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="fundclone",
@@ -83,6 +101,11 @@ def main(argv: list[str] | None = None) -> None:
         "--expense-ratio",
         type=_fee,
         help="the fund's expense ratio in percent, if Yahoo Finance reports none, e.g. 1.5",
+    )
+    parser.add_argument(
+        "--ucits-twins",
+        action="store_true",
+        help="also list the UCITS ETF an investor in the EU can buy in place of each ETF",
     )
     parser.add_argument(
         "--etf-set",
@@ -151,6 +174,8 @@ def main(argv: list[str] | None = None) -> None:
     for _, row in allocation.iterrows():
         line = f"  {row['ETF']:<{ticker_width}} {row['Name']:<{name_width}} {row['Weight']:>7.1%}"
         print(f"{line}  {row['ISIN']}".rstrip() if "ISIN" in allocation else line)
+    if args.ucits_twins:
+        print_twins(a, args.etf_set, ticker_width)
 
     perf = a.performance.copy()
     for column in ["annual_return", "volatility", "max_drawdown", "total_return"]:

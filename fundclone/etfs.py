@@ -84,7 +84,7 @@ _TABLE: dict[str, dict[str, tuple[str, float]]] = {
         "MTUM": ("MSCI USA Momentum", 0.15),
         "QUAL": ("MSCI USA Quality", 0.15),
         "USMV": ("MSCI USA Minimum Volatility", 0.15),
-        "VLUE": ("MSCI USA Value", 0.15),
+        "VLUE": ("MSCI USA Enhanced Value", 0.15),
     },
     "International equity": {
         "EFA": ("MSCI EAFE", 0.32),
@@ -147,7 +147,7 @@ _UCITS_TABLE: dict[str, dict[str, tuple[str, float, str]]] = {
         "SXR8.DE": ("S&P 500", 0.07, "IE00B5BMR087"),
         "SXRV.DE": ("Nasdaq-100", 0.30, "IE00B53SZB19"),
         "ZPRR.DE": ("Russell 2000", 0.30, "IE00BJ38QD84"),
-        "QDVI.DE": ("MSCI USA Value", 0.20, "IE00BD1F4M44"),
+        "QDVI.DE": ("MSCI USA Enhanced Value", 0.20, "IE00BD1F4M44"),
     },
     "European equity": {
         "EXSA.DE": ("STOXX Europe 600", 0.20, "DE0002635307"),
@@ -274,6 +274,467 @@ ETFS: list[ETF] = [
     for ticker, (name, pct, isin) in members.items()
 ]
 BY_TICKER: dict[str, ETF] = {etf.ticker: etf for etf in ETFS}
+
+
+@dataclass(frozen=True)
+class Twin:
+    """A UCITS ETF, or for gold an ETC, that an investor in the EU can buy in place of a
+    US-listed ETF of the default set."""
+
+    name: str
+    expense_ratio: float  # annual total expense ratio, as a decimal
+    isin: str
+    match: str  # "same" index, "capped" (the same index, capped differently) or "similar"
+    index: str  # the index the twin follows
+    note: str = ""
+
+    def describe(self) -> str:
+        """How the twin's index relates to the US-listed ETF's, and anything else to know."""
+        text = {
+            "same": "Same index",
+            "capped": f"Same index, capped differently ({self.index})",
+            "similar": f"Similar index: {self.index}",
+        }[self.match]
+        return f"{text}; {self.note}" if self.note else text
+
+
+# UCITS twins of the US-listed ETFs, with names, total expense ratios, ISINs and indices
+# from justETF, read on 15 September 2026. 64 of the 81 have one. There is none for Russell
+# midcap value and growth, small-cap growth, eight US industries, EAFE value, growth and
+# small caps, senior loans and municipal bonds.
+TWINS_AS_OF = "15 September 2026"
+# US ticker -> (name, total expense ratio in percent, ISIN, match, index[, note])
+_TWIN_TABLE: dict[str, tuple] = {
+    "SPY": ("iShares Core S&P 500 UCITS ETF USD (Acc)", 0.07, "IE00B5BMR087", "same", "S&P 500"),
+    "QQQ": ("iShares Nasdaq 100 UCITS ETF (Acc)", 0.3, "IE00B53SZB19", "same", "Nasdaq 100"),
+    "IWD": (
+        "Vanguard Russell 1000 U.S. Value UCITS ETF USD Acc",
+        0.16,
+        "IE000US24HF4",
+        "same",
+        "Russell 1000 Value",
+        "launched in July 2026",
+    ),
+    "IWF": (
+        "Amundi Russell 1000 Growth UCITS ETF Acc",
+        0.19,
+        "IE0005E8B9S4",
+        "same",
+        "Russell 1000 Growth",
+    ),
+    "IJH": (
+        "State Street SPDR S&P 400 U.S. Mid Cap UCITS ETF USD Unhedged (Acc)",
+        0.3,
+        "IE00B4YBJ215",
+        "same",
+        "S&P MidCap 400",
+    ),
+    "IWM": (
+        "State Street SPDR Russell 2000 U.S. Small Cap UCITS ETF USD",
+        0.3,
+        "IE00BJ38QD84",
+        "same",
+        "Russell 2000",
+    ),
+    "IWN": (
+        "State Street SPDR MSCI USA Small Cap Value Weighted UCITS ETF USD",
+        0.3,
+        "IE00BSPLC413",
+        "similar",
+        "MSCI USA Small Cap Value Weighted",
+    ),
+    "DVY": (
+        "iShares Dow Jones US Select Dividend UCITS ETF (DE)",
+        0.31,
+        "DE000A0D8Q49",
+        "same",
+        "Dow Jones US Select Dividend",
+    ),
+    "VIG": (
+        "WisdomTree US Quality Dividend Growth UCITS ETF USD Acc",
+        0.33,
+        "IE00BZ56RG20",
+        "similar",
+        "WisdomTree US Quality Dividend Growth",
+    ),
+    "XLK": (
+        "State Street SPDR S&P U.S. Technology Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM948",
+        "capped",
+        "S&P Technology Select Sector Daily Capped 35/20",
+    ),
+    "XLF": (
+        "State Street SPDR S&P U.S. Financials Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM500",
+        "capped",
+        "S&P Financials Select Sector Daily Capped 35/20",
+    ),
+    "XLV": (
+        "State Street SPDR S&P U.S. Health Care Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM617",
+        "capped",
+        "S&P Health Care Select Sector Daily Capped 35/20",
+    ),
+    "XLE": (
+        "State Street SPDR S&P U.S. Energy Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM492",
+        "capped",
+        "S&P Energy Select Sector Daily Capped 35/20",
+    ),
+    "XLI": (
+        "State Street SPDR S&P U.S. Industrials Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM724",
+        "capped",
+        "S&P Industrial Select Sector Daily Capped 35/20",
+    ),
+    "XLY": (
+        "State Street SPDR S&P U.S. Consumer Discretionary Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM278",
+        "capped",
+        "S&P Consumer Discretionary Select Sector Daily Capped 35/20",
+    ),
+    "XLP": (
+        "State Street SPDR S&P U.S. Consumer Staples Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM385",
+        "capped",
+        "S&P Consumer Staples Select Sector Daily Capped 35/20",
+    ),
+    "XLU": (
+        "State Street SPDR S&P U.S. Utilities Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXMB69",
+        "capped",
+        "S&P Utilities Select Sector Daily Capped 35/20",
+    ),
+    "XLB": (
+        "State Street SPDR S&P U.S. Materials Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BWBXM831",
+        "capped",
+        "S&P Materials Select Sector Daily Capped 35/20",
+    ),
+    "XLRE": (
+        "Invesco US Real Estate Sector UCITS ETF",
+        0.14,
+        "IE00BYM8JD58",
+        "capped",
+        "S&P Select Sector Capped 20% Real Estate",
+        "not on Xetra; on gettex and Borsa Italiana",
+    ),
+    "XLC": (
+        "State Street SPDR S&P U.S. Communication Services Select Sector UCITS ETF USD",
+        0.15,
+        "IE00BFWFPX50",
+        "capped",
+        "S&P Communication Services Select Sector Daily Capped 35/20",
+    ),
+    "SOXX": (
+        "VanEck Semiconductor UCITS ETF",
+        0.35,
+        "IE00BMC38736",
+        "similar",
+        "MarketVector US Listed Semiconductor 10% Capped Screened",
+    ),
+    "FDN": (
+        "First Trust Dow Jones Internet UCITS ETF Acc",
+        0.55,
+        "IE00BG0SSC32",
+        "same",
+        "Dow Jones Internet Composite",
+        "not on Xetra; on gettex and Euronext Amsterdam",
+    ),
+    "IBB": (
+        "iShares Nasdaq US Biotechnology UCITS ETF",
+        0.35,
+        "IE00BYXG2H39",
+        "similar",
+        "Nasdaq Biotechnology",
+    ),
+    "ITA": (
+        "iShares U.S. Aerospace & Defence UCITS ETF USD (Acc)",
+        0.38,
+        "IE000IR2DEM6",
+        "capped",
+        "Dow Jones U.S. Select Aerospace & Defense Capped 35/20",
+        "launched in May 2026",
+    ),
+    "XOP": (
+        "iShares Oil & Gas Exploration & Production UCITS ETF",
+        0.55,
+        "IE00B6R51Z18",
+        "similar",
+        "S&P Commodity Producers Oil & Gas Exploration & Production",
+    ),
+    "GDX": (
+        "VanEck Gold Miners UCITS ETF",
+        0.53,
+        "IE00BQQP9F84",
+        "same",
+        "MarketVector Global Gold Miners",
+    ),
+    "ICLN": (
+        "iShares Global Clean Energy Transition UCITS ETF USD (Dist)",
+        0.65,
+        "IE00B1XNHC34",
+        "same",
+        "S&P Global Clean Energy Transition",
+    ),
+    "MTUM": (
+        "iShares Edge MSCI USA Momentum Factor UCITS ETF",
+        0.2,
+        "IE00BD1F4N50",
+        "similar",
+        "MSCI USA Momentum",
+    ),
+    "QUAL": (
+        "iShares Edge MSCI USA Quality Factor UCITS ETF",
+        0.2,
+        "IE00BD1F4L37",
+        "same",
+        "MSCI USA Sector Neutral Quality",
+    ),
+    "USMV": (
+        "Amundi MSCI USA Minimum Volatility Factor UCITS ETF DR",
+        0.18,
+        "LU1589349734",
+        "same",
+        "MSCI USA Minimum Volatility",
+    ),
+    "VLUE": (
+        "iShares Edge MSCI USA Value Factor UCITS ETF",
+        0.2,
+        "IE00BD1F4M44",
+        "same",
+        "MSCI USA Enhanced Value",
+    ),
+    "EFA": (
+        "Xtrackers MSCI World ex USA UCITS ETF 1C",
+        0.15,
+        "IE0006WW1TQ4",
+        "similar",
+        "MSCI World ex USA",
+    ),
+    "EZU": ("iShares Core MSCI EMU UCITS ETF EUR (Acc)", 0.12, "IE00B53QG562", "same", "MSCI EMU"),
+    "EWU": ("iShares MSCI UK UCITS ETF (Acc)", 0.33, "IE00B539F030", "same", "MSCI UK"),
+    "EWJ": ("Xtrackers MSCI Japan UCITS ETF 1C", 0.12, "LU0274209740", "same", "MSCI Japan"),
+    "EWC": (
+        "iShares MSCI Canada UCITS ETF (Acc)",
+        0.48,
+        "IE00B52SF786",
+        "capped",
+        "MSCI Canada",
+    ),
+    "EWL": (
+        "Amundi MSCI Switzerland UCITS ETF CHF",
+        0.25,
+        "LU1681044993",
+        "capped",
+        "MSCI Switzerland",
+    ),
+    "EWA": ("iShares MSCI Australia UCITS ETF", 0.5, "IE00B5377D42", "same", "MSCI Australia"),
+    "EEM": (
+        "iShares MSCI EM UCITS ETF (Acc)",
+        0.18,
+        "IE00B4L5YC18",
+        "same",
+        "MSCI Emerging Markets",
+    ),
+    "AAXJ": (
+        "iShares MSCI EM Asia UCITS ETF (Acc)",
+        0.2,
+        "IE00B5L8K969",
+        "similar",
+        "MSCI Emerging Markets Asia",
+    ),
+    "FXI": ("iShares China Large Cap UCITS ETF", 0.74, "IE00B02KXK85", "same", "FTSE China 50"),
+    "EWZ": ("Xtrackers MSCI Brazil UCITS ETF 1C", 0.25, "LU0292109344", "capped", "MSCI Brazil"),
+    "EWY": (
+        "Xtrackers MSCI Korea UCITS ETF 1C",
+        0.45,
+        "LU0292100046",
+        "capped",
+        "MSCI Korea 20/35 Custom",
+    ),
+    "EWT": (
+        "Xtrackers MSCI Taiwan UCITS ETF 1C",
+        0.65,
+        "LU0292109187",
+        "capped",
+        "MSCI Taiwan 20/35 Custom",
+    ),
+    "INDA": (
+        "Xtrackers MSCI India Swap UCITS ETF 1C",
+        0.19,
+        "LU0514695187",
+        "same",
+        "MSCI India",
+    ),
+    "SHY": (
+        "iShares USD Treasury Bond 1-3yr UCITS ETF (Dist)",
+        0.07,
+        "IE00B14X4S71",
+        "same",
+        "ICE US Treasury 1-3 Year",
+    ),
+    "IEI": (
+        "iShares USD Treasury Bond 3-7yr UCITS ETF (Acc)",
+        0.07,
+        "IE00B3VWN393",
+        "same",
+        "ICE US Treasury 3-7 Year",
+    ),
+    "IEF": (
+        "iShares USD Treasury Bond 7-10yr UCITS ETF (Acc)",
+        0.07,
+        "IE00B3VWN518",
+        "same",
+        "ICE US Treasury 7-10 Year",
+    ),
+    "TLT": (
+        "iShares USD Treasury Bond 20+yr UCITS ETF USD (Dist)",
+        0.07,
+        "IE00BSKRJZ44",
+        "same",
+        "ICE US Treasury 20+ Year",
+    ),
+    "TIP": (
+        "iShares USD TIPS UCITS ETF USD (Acc)",
+        0.1,
+        "IE00B1FZSC47",
+        "similar",
+        "Bloomberg US Government Inflation-Linked Bond",
+    ),
+    "AGG": (
+        "iShares US Aggregate Bond UCITS ETF (Dist)",
+        0.25,
+        "IE00B44CGS96",
+        "same",
+        "Bloomberg US Aggregate Bond",
+    ),
+    "MBB": (
+        "iShares US Mortgage Backed Securities UCITS ETF",
+        0.28,
+        "IE00BZ6V7883",
+        "same",
+        "Bloomberg US Mortgage Backed Securities",
+    ),
+    "VCSH": (
+        "State Street SPDR Bloomberg 1-5 Year U.S. Corporate Bond UCITS ETF USD Unhedged (Acc)",
+        0.08,
+        "IE0002H3JQ66",
+        "same",
+        "Bloomberg USD Corporate Bonds 1-5 Years",
+    ),
+    "VCIT": (
+        "State Street SPDR Bloomberg 1-10 Year U.S. Corporate Bond UCITS ETF USD Unhedged (Dist)",
+        0.12,
+        "IE00BYV12Y75",
+        "similar",
+        "Bloomberg US Intermediate Corporate Bond",
+    ),
+    "LQD": (
+        "iShares USD Corporate Bond UCITS ETF (Dist)",
+        0.2,
+        "IE0032895942",
+        "same",
+        "iBoxx USD Liquid Investment Grade",
+    ),
+    "FLOT": (
+        "iShares USD Floating Rate Bond UCITS ETF",
+        0.1,
+        "IE00BZ048462",
+        "same",
+        "Bloomberg US Floating Rate Notes 1-5",
+    ),
+    "HYG": (
+        "iShares USD High Yield Corporate Bond UCITS ETF USD (Dist)",
+        0.5,
+        "IE00B4PY7Y77",
+        "capped",
+        "iBoxx USD Liquid High Yield Capped",
+    ),
+    "CWB": (
+        "State Street SPDR FTSE Global Convertible Bond UCITS ETF USD Unhedged (Dist)",
+        0.5,
+        "IE00BNH72088",
+        "similar",
+        "FTSE Qualified Global Convertible",
+    ),
+    "EMB": (
+        "iShares J.P. Morgan USD Emerging Markets Bond UCITS ETF (Acc)",
+        0.45,
+        "IE00BYXYYK40",
+        "similar",
+        "JP Morgan EMBI Global Core",
+    ),
+    "BWX": (
+        "Amundi Global ex-US Government Bond UCITS ETF Acc",
+        0.2,
+        "LU3254330437",
+        "similar",
+        "Bloomberg Global Treasury Large Markets DM ex US",
+    ),
+    "BNDX": (
+        "State Street SPDR Bloomberg Global Aggregate Bond UCITS ETF USD Hedged (Acc)",
+        0.1,
+        "IE00BKC94M46",
+        "similar",
+        "Bloomberg Global Aggregate Bond (USD Hedged)",
+    ),
+    "VNQ": (
+        "iShares US Property Yield UCITS ETF",
+        0.4,
+        "IE00B1FZSF77",
+        "similar",
+        "FTSE EPRA/NAREIT United States Dividend+",
+    ),
+    "GLD": (
+        "Xetra-Gold",
+        0,
+        "DE000A0S9GB0",
+        "same",
+        "Gold",
+        "an exchange-traded commodity backed by gold, not a UCITS fund",
+    ),
+    "DBC": (
+        "iShares Diversified Commodity Swap UCITS ETF",
+        0.19,
+        "IE00BDFL4P12",
+        "similar",
+        "Bloomberg Commodity",
+    ),
+}
+UCITS_TWINS: dict[str, Twin] = {
+    ticker: Twin(name, pct / 100, isin, match, index, *note)
+    for ticker, (name, pct, isin, match, index, *note) in _TWIN_TABLE.items()
+}
+
+
+def twin_coverage(weights: Mapping[str, float]) -> dict[str, float]:
+    """For an allocation of US-listed ETFs: the shares of its invested weight whose ETF has a
+    UCITS twin on the same index (capped differently or not), on a similar index, or none,
+    and the twins' average expense ratio over the weight they cover."""
+    shares = {"same": 0.0, "similar": 0.0, "none": 0.0}
+    cost = 0.0
+    for ticker, weight in weights.items():
+        twin = UCITS_TWINS.get(ticker)
+        if twin is None:
+            shares["none"] += weight
+            continue
+        shares["similar" if twin.match == "similar" else "same"] += weight
+        cost += weight * twin.expense_ratio
+    invested = sum(shares.values())
+    covered = shares["same"] + shares["similar"]
+    result = {key: value / invested if invested > 0 else 0.0 for key, value in shares.items()}
+    result["expense_ratio"] = cost / covered if covered > 0 else float("nan")
+    return result
 
 
 def asset_classes(etf_set: str = DEFAULT_SET) -> list[str]:

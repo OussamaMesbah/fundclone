@@ -186,6 +186,15 @@ def test_an_expense_ratio_entered_replaces_the_one_from_yahoo():
         analyse(expense_ratio=0.5)
 
 
+def test_the_clone_lists_a_ucits_twin_for_each_etf():
+    a = analyse()
+    twins = a.twins()
+    assert list(twins["ETF"]) == list(a.current_weights.index)
+    for _, row in twins.iterrows():
+        twin = etfs.UCITS_TWINS.get(row["ETF"])
+        assert row["ISIN"] == (twin.isin if twin else "")
+
+
 def test_a_fund_whose_price_never_changes_raises():
     def loader(tickers, start, end):
         return fake_prices(tickers, start, end).assign(FUND=1.0)

@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- UCITS twins: for 64 of the 81 US-listed ETFs, a UCITS ETF that investors in the EU can
+  buy in its place, following the same index (30), the same index capped differently (18)
+  or a similar one (16), with ISINs and total expense ratios from justETF. The app lists
+  them for a clone under a toggle, the command line with `--ucits-twins`, and Python with
+  `Analysis.twins()`.
 - The benchmark reports the closest single ETF of every fund, as the app's verdict does, and
   how many active funds came out ahead of or behind their clone and that ETF after fees, by
   more than noise or not, over the whole period or any part of it (`--eval-end`). The
@@ -42,6 +47,8 @@
   CSV are an illustration, not a recommendation.
 
 ### Fixed
+- The value factor ETFs, VLUE and QDVI, are labelled with the index they follow, MSCI USA
+  Enhanced Value.
 - Prices that break away from the fund's closest ETF and come back within two days are
   left out: distributions Yahoo books a day late (AMCPX and AWSHX on 19 December 2014) and
   prices that stay unchanged while the market moves (FBIOX in May 2025).

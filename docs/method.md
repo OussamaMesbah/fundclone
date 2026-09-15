@@ -88,6 +88,13 @@ USD, differs from SPY by 7.8% a year on weekly returns. On the benchmark over 20
 ones, so the analysis says so when UCITS ETFs are chosen for a fund priced in US hours,
 and points to them for a fund priced in European hours.
 
+For a clone of US-listed ETFs, a table lists a UCITS twin for 64 of the 81 ETFs
+(`UCITS_TWINS` in `fundclone/etfs.py`, from justETF, 15 September 2026). 30 follow the same
+index, 18 the same index capped differently (the SPDR sector twins, for instance, let the
+largest stock weigh up to 35% and the others up to 20%), and 16 a similar one. The clone
+is fitted and scored with the US-listed ETFs; a clone built from the twins was not tested,
+and would add the timing noise of European prices to any weekly comparison.
+
 ## 4. The walk-forward clone
 
 - **Signal dates.** The last trading day of each month (or quarter), once the estimation

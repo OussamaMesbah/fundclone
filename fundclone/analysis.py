@@ -129,6 +129,26 @@ class Analysis:
             return table.drop(columns="ISIN", errors="ignore")
         return table
 
+    def twins(self) -> pd.DataFrame:
+        """The clone's ETFs with the UCITS twin an investor in the EU can buy in their place
+        (etfs.UCITS_TWINS): its name, ISIN, total expense ratio and how its index relates.
+        ETFs without a twin, including UCITS ETFs, keep empty fields."""
+        rows = []
+        for ticker, weight in self.current_weights.items():
+            twin = etfs.UCITS_TWINS.get(ticker)
+            rows.append(
+                {
+                    "ETF": ticker,
+                    "Weight": weight,
+                    "UCITS twin": twin.name if twin else "None found",
+                    "ISIN": twin.isin if twin else "",
+                    "Expense ratio": twin.expense_ratio if twin else float("nan"),
+                    "Index": twin.describe() if twin else "",
+                }
+            )
+        columns = ["ETF", "Weight", "UCITS twin", "ISIN", "Expense ratio", "Index"]
+        return pd.DataFrame(rows, columns=columns)
+
 
 def run_analysis(
     target: str | Mapping[str, float],

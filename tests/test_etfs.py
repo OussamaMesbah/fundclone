@@ -72,3 +72,22 @@ def test_known_xetra_price_errors_are_left_out():
     assert fixed.loc["2017-06-06", "IS3Q.DE"] == 1.0
     assert fixed["EUNL.DE"].notna().all()  # its start date lies before these prices
     assert prices.notna().all().all()  # the input is left as it was
+
+
+def test_every_ucits_twin_belongs_to_a_us_etf_and_has_a_valid_isin():
+    us = set(etfs.tickers())
+    assert len(etfs.UCITS_TWINS) == 64
+    for ticker, twin in etfs.UCITS_TWINS.items():
+        assert ticker in us
+        assert is_valid_isin(twin.isin), ticker
+        assert 0 <= twin.expense_ratio < 0.01
+        assert twin.match in ("same", "capped", "similar")
+
+
+def test_twin_coverage_splits_the_clone_by_how_closely_its_twins_match():
+    cover = etfs.twin_coverage({"SPY": 0.5, "VIG": 0.2, "KRE": 0.2})
+    assert cover["same"] == pytest.approx(0.5 / 0.9)
+    assert cover["similar"] == pytest.approx(0.2 / 0.9)
+    assert cover["none"] == pytest.approx(0.2 / 0.9)
+    assert cover["expense_ratio"] == pytest.approx((0.5 * 0.0007 + 0.2 * 0.0033) / 0.7)
+    assert etfs.UCITS_TWINS["XLK"].describe().startswith("Same index, capped differently")
