@@ -87,7 +87,11 @@ Between releases, `dev` carries a development version such as `0.5.0.dev0`, and
    package and creates the GitHub release with the changelog section as its notes. It also
    publishes to PyPI once trusted publishing is set up (environment `pypi`, repository
    variable `PUBLISH_TO_PYPI=true`).
-6. Fast-forward `dev` to the merge commit on `master`, so that both branches match. The
+6. Reboot the web app on Streamlit Community Cloud (Manage app → Reboot app), then open it
+   once to check that it works. The app pulls `master` on its own, but its running process
+   keeps the modules it has already imported, so new app code meets old modules and fails
+   with an ImportError until the app restarts.
+7. Fast-forward `dev` to the merge commit on `master`, so that both branches match. The
    `dev` ruleset allows no direct pushes, so the maintainer pauses it for this one update.
    Then open a pull request into `dev` that sets the next development version, such as
    `0.6.0.dev0`.
