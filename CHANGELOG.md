@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Added
+- The benchmark reports the closest single ETF of every fund, as the app's verdict does, and
+  how many active funds came out ahead of or behind their clone and that ETF after fees, by
+  more than noise or not. The README and benchmarks/README.md report the result, and that
+  the clones hold slightly too little risk (a median 3% in T-bills, a beta of the funds to
+  their clones of 1.03), which flatters the funds by about 0.2 points a year in the median.
+- `benchmarks.compare` compares two benchmark runs fund by fund, with a bootstrap range for
+  the median difference, so the README's fund-by-fund figures can be reproduced.
+- A check for distributions Yahoo Finance has not adjusted for yet. When one of a fund's
+  last ten returns falls the way a payout does and does not come back, the figures end the
+  day before, with a note. FLPSX's price fell 8.7% this way on 11 September 2026, and Yahoo
+  listed no distribution.
+
+### Changed
+- "Switching from the fund" no longer counts a front-end load already paid as a saving
+  from switching: it is gone whether or not the fund is sold, so it now counts only for new
+  money. A deferred sales charge still due on selling is part of the cost of switching.
+- The README describes the clone and its orders as the app does: whole-share orders and the
+  CSV are an illustration, not a recommendation.
+
+### Fixed
+- The README, docs/method.md and the app's Method tab said Sharpe (1992) fitted the style
+  mix once, over the whole history. To measure performance he re-estimated it every month
+  from the previous 60 months. They now say so, credit Hasanhodzic and Lo (2007) for
+  rolling-window clones, and say what FundClone changes: ETFs you can buy, daily returns
+  and trading costs.
+
 ## 0.5.0 (2026-09-14)
 
 Answers to the points a critical reader would raise, and UCITS building blocks for

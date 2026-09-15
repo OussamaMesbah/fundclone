@@ -1,7 +1,7 @@
 # FundClone
 
 **Is your active fund worth its fee?** FundClone clones any mutual fund, ETF or
-portfolio with a handful of low-cost ETFs, and measures, strictly out of sample, how
+portfolio with a mix of low-cost ETFs, and measures, strictly out of sample, how
 much of the fund you get from the clone and what the manager adds on top after fees.
 
 [![tests](https://github.com/OussamaMesbah/fundclone/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/OussamaMesbah/fundclone/actions/workflows/tests.yml)
@@ -18,9 +18,10 @@ much of the fund you get from the clone and what the manager adds on top after f
   reproduces, how much faster or slower the fund grew than its clone after all fees
   (with a 95% range), and whether it meets the closet-indexing thresholds of an ESMA
   working paper.
-- **A clone you can buy.** Typically seven to ten liquid ETFs, their weights, whole-share
-  orders for any amount, what the fees add up to and a CSV to take to your broker. Cap
-  it at three or five ETFs if you prefer something simpler.
+- **The clone itself.** Typically seven to ten liquid ETFs and their weights, what the fees
+  add up to and how the mix changed over time; cap it at three or five ETFs for a simpler
+  one. Whole-share orders and a CSV show what the weights would mean for an amount, as an
+  illustration rather than a recommendation.
 - **What switching would cost.** The tax on gains you would realise by selling the fund,
   how long the lower fees take to earn it back, a warning for share classes that charge a
   sales load, and how much the clone trades against what the fund reports.
@@ -85,16 +86,18 @@ once with the final code:
 
 | 23 fresh funds, 2010 to 2026 | Median tracking error | Mean tracking error | Median R² | ETFs held |
 |---|---|---|---|---|
+| The closest single ETF, picked with hindsight | 4.63% | 4.72% | 0.912 | 1 |
 | Before 0.3: 4-7 hand-picked ETFs | 3.78% | 4.44% | 0.930 | 2.9 |
 | **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **7.8** |
 | FundClone 0.3, at most 5 ETFs | 3.00% | 3.02% | 0.963 | 4.6 |
 
 With 23 funds the median itself is uncertain: drawing the funds again and again with
 replacement (a bootstrap) puts it between 2.3% and 3.2% with 95% confidence. Compared fund
-by fund, the clone tracks 0.54 percentage points more closely in the median, with a 95%
-range of 0.25 to 1.31 points. The 81 ETFs were picked in 2026, with hindsight; limited to
-the 68 that were already trading in January 2009, a year before scoring starts, the median
-over all 64 funds stays at 2.91%.
+by fund, the clone tracks 1.15 percentage points more closely than the closest single ETF
+in the median (95% range 0.86 to 2.12; more closely on 21 of the 23 funds), and 0.54
+points more closely than before 0.3 (0.26 to 1.30). The 81 ETFs were picked in 2026, with
+hindsight; limited to the 68 that were already trading in January 2009, a year before
+scoring starts, the median over all 64 funds stays at 2.91%.
 
 The clone tracks more closely than before on 22 of the 23 funds; the exception is an S&P
 500 index fund (0.60% before, 0.63% now). Plain least squares on the same 81 ETFs tracks
@@ -120,15 +123,24 @@ or Berkshire Hathaway (11%) it is a large part of the story. The protocol, the r
 fund, a comparison of seven estimation methods and the commands to reproduce every
 number are in [benchmarks/](https://github.com/OussamaMesbah/fundclone/blob/master/benchmarks/README.md).
 
+Did the funds beat their clones? Of the benchmark's 59 active funds, 11 returned more than
+their clone by more than noise from 2010 to 2026 after fees, and 1 less. That flatters the
+funds: they are well-known survivors, and the clones hold slightly too little risk, which
+costs them about 0.2 percentage points a year in the median (see Limitations). Against the
+closest single ETF, 6 were ahead by more than noise and 8 behind, and the median fund came
+out level.
+
 ## How it works
 
 FundClone builds on returns-based style analysis
 ([Sharpe, 1992](https://web.stanford.edu/~wfsharpe/art/sa/sa.htm)): a fund's returns are
-explained by a long-only mix of asset-class returns. Sharpe fitted that mix once, over the
-whole history, to describe a fund's style. FundClone refits it every month from past data
-only, on ETFs you can buy, and measures out of sample, after trading costs, how closely the
-clone follows the fund and what the fund returns beyond it. Every step, with its parameters
-and references, is in
+explained by a long-only mix of asset-class returns. To judge performance, Sharpe
+re-estimated that mix every month from the previous 60 months only, and counted what the
+fund returned beyond it as selection. FundClone keeps that design and changes the
+ingredients: ETFs you can buy instead of asset-class indices, daily returns weighted
+towards recent days, a day's delay before trading, and trading costs. It then measures,
+out of sample, how closely the clone follows the fund and what the fund returns beyond it.
+Every step, with its parameters and references, is in
 [docs/method.md](https://github.com/OussamaMesbah/fundclone/blob/master/docs/method.md).
 
 1. **Building blocks.** 81 liquid US-listed ETFs: size and style, the eleven sectors, 16
@@ -173,18 +185,28 @@ three = ReplicationConfig(max_etfs=3)
 portfolio = run_analysis(mix, "2012-01-01", "2026-09-01", replication=three)
 ```
 
-## Related tools
+## Prior work and related tools
 
-Returns-based style analysis is a standard tool. Portfolio Visualizer offers it together
-with factor regressions and manager performance analysis, and Interactive Brokers gives
-its clients a Mutual Fund Replicator that suggests ETFs in place of a mutual fund.
-FundClone differs in that every clone is tested out of sample with trading costs, and it
-is open source under the MIT license, benchmark included.
+None of the ideas is new. Sharpe (1992) already measured a fund against a style mix
+estimated from earlier data only, and Hasanhodzic and Lo (2007) built rolling-window
+"linear clones" of hedge funds from liquid factors. Commercial analytics such as Zephyr
+StyleADVISOR have offered style analysis for decades, Portfolio Visualizer offers it with
+factor regressions and manager performance analysis, and Interactive Brokers gives its
+clients a Mutual Fund Replicator that suggests ETFs in place of a mutual fund. What
+FundClone adds is narrower: the style mix is made of ETFs you can buy and is traded with
+costs, the method is scored on a published benchmark that includes funds picked after
+development, and all of it, benchmark included, is open source under the MIT license.
 
 ## Limitations
 
 - Stock selection cannot be cloned from returns. For concentrated funds the tracking
   error stays high; that is the size of the active bet you pay for.
+- The clone tends to hold a little less risk than the fund. On the benchmark it keeps a
+  median 3% in T-bills (13% for bond funds), and the funds' beta to their clone is 1.03,
+  partly because daily fund prices follow the market a little late and partly because the
+  clone cannot borrow. In a rising market that flatters the fund-minus-clone gap by about
+  0.2 percentage points a year in the median, one reason the verdict also shows the
+  closest single ETF.
 - Investors in the EU generally cannot buy the US-listed ETFs. The UCITS set suits funds
   priced in European hours. For funds priced in US hours its Xetra prices, set four and a
   half hours earlier, add timing noise: over 2018 to 2026 the benchmark's median weekly
@@ -195,7 +217,11 @@ is open source under the MIT license, benchmark included.
   the ESMA screen.
 - Prices come from Yahoo Finance through yfinance. They have gaps and errors, and Yahoo's
   terms allow personal, non-commercial use only, so the repository ships no Yahoo data.
-  When Yahoo limits requests, FundClone waits, tries again and then says so.
+  When Yahoo limits requests, FundClone waits, tries again and then says so. Yahoo
+  sometimes takes days to adjust a fund's prices for a distribution; when the latest
+  prices fall the way a payout does, the figures end the day before, with a note. Its
+  coverage of European funds is patchy: many have only a few years of prices, some none,
+  and often no expense ratio.
 - Every figure follows the fund's net asset value: after its expense ratio, but before any
   sales load and before tax. The app warns for share classes whose name implies a load, and
   turns a load and your own tax situation into numbers, but it knows neither.

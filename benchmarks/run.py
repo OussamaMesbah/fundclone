@@ -33,11 +33,13 @@ from fundclone.data import (
     drop_stale_prices,
     fx_ticker,
     to_usd,
+    unadjusted_distribution,
     weekly_returns,
 )
 from fundclone.estimators import make_estimator
 from fundclone.metrics import WEEKS_PER_YEAR, tracking, years_spanned
 from fundclone.replication import ReplicationConfig, constrained_least_squares, walk_forward
+from fundclone.report import interval
 
 FUNDS_FILE = Path(__file__).with_name("funds.csv")
 DATA_DIR = Path(__file__).with_name("data")  # where benchmarks.download puts the snapshot
@@ -153,6 +155,8 @@ def evaluate(fund: dict, universe: str) -> dict:
             fund_prices = drop_stale_prices(fund_prices, market)
             if not stock:
                 fund_prices = adjust_splits(fund_prices, market)[0]
+                if found := unadjusted_distribution(fund_prices, market):
+                    fund_prices = fund_prices[fund_prices.index < found[0]]
         fund_returns = daily_returns(fund_prices)
         etf_returns = daily_returns(prices[assets].ffill().reindex(fund_prices.index))
         rf_daily = compounded_rate(rf, fund_prices.index).reindex(fund_returns.index)
@@ -170,13 +174,30 @@ def evaluate(fund: dict, universe: str) -> dict:
         monthly = (1 + pair).resample("ME").prod() - 1
         weights = result.weights[result.weights.index >= start]
         years = years_spanned(clone.index)  # calendar years: merged stale days still count
+        # The simplest alternative, as in the app's verdict: the single ETF that tracked the
+        # fund best over the scored weeks, chosen with hindsight.
+        singles = weekly_returns(etf_returns.reindex(clone.index).dropna(axis=1))
+        closest = str(singles.sub(weekly["fund"], axis=0).std().idxmin())
+        versus_clone = tracking(weekly["fund"], weekly["clone"], WEEKS_PER_YEAR)
+        versus_closest = tracking(weekly["fund"], singles[closest], WEEKS_PER_YEAR)
+        gap_low, gap_high = interval(versus_clone)
+        closest_low, closest_high = interval(versus_closest)
         row.update(tracking(pair["fund"], pair["clone"]))
         row.update(
-            te_weekly=tracking(weekly["fund"], weekly["clone"], WEEKS_PER_YEAR)["tracking_error"],
-            r2_weekly=tracking(weekly["fund"], weekly["clone"], WEEKS_PER_YEAR)["r_squared"],
+            te_weekly=versus_clone["tracking_error"],
+            r2_weekly=versus_clone["r_squared"],
             te_monthly=float((monthly["fund"] - monthly["clone"]).std() * np.sqrt(12)),
             turnover=float(result.turnover[result.turnover.index >= start].sum() / years),
             holdings=float((weights.abs() > 0.01).sum(axis=1).mean()),
+            gap=versus_clone["active_return"],
+            gap_low=gap_low,
+            gap_high=gap_high,
+            closest=closest,
+            te_closest=versus_closest["tracking_error"],
+            r2_closest=versus_closest["r_squared"],
+            gap_closest=versus_closest["active_return"],
+            gap_closest_low=closest_low,
+            gap_closest_high=closest_high,
             start=f"{clone.index[0]:%Y-%m-%d}",
             end=f"{clone.index[-1]:%Y-%m-%d}",
             error="",
@@ -196,12 +217,33 @@ def median_range(values, draws: int = 10_000, seed: int = 0) -> tuple[float, flo
     return float(np.percentile(medians, 2.5)), float(np.percentile(medians, 97.5))
 
 
+PASSIVE = ("Index", "Single stock")  # categories left out of the tally of active funds
+
+
+def verdicts(ok: pd.DataFrame) -> str:
+    """How the actively managed funds fared after all fees, against their clone and against
+    the closest single ETF: how many came out ahead, and how many were ahead or behind by
+    more than noise, meaning that the 95% range of the gap excludes zero."""
+    active = ok[~ok["category"].isin(PASSIVE)]
+    lines = [f"\n{len(active)} active funds, after all fees:"]
+    for name, gap in (("clone", "gap"), ("closest single ETF", "gap_closest")):
+        lines.append(
+            f"  against the {name}: ahead {int((active[gap] > 0).sum())}, by more than noise "
+            f"{int((active[f'{gap}_low'] > 0).sum())}; behind by more than noise "
+            f"{int((active[f'{gap}_high'] < 0).sum())}; median gap {active[gap].median():+.2%}"
+        )
+    return "\n".join(lines)
+
+
 def summarise(results: pd.DataFrame) -> str:
     ok = results[results["error"] == ""]
     lines = []
     for _, row in results[results["error"] != ""].iterrows():
         lines.append(f"FAILED {row['ticker']}: {row['error']}")
-    columns = ["tracking_error", "te_weekly", "te_monthly", "r2_weekly", "turnover", "holdings"]
+    columns = [
+        *("tracking_error", "te_weekly", "te_monthly", "r2_weekly", "turnover", "holdings"),
+        *("te_closest", "gap"),
+    ]
     table = ok[["ticker", "category", *columns]]
     lines.append(table.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     by_category = ok.groupby("category")[["te_weekly", "r2_weekly"]].median()
@@ -213,8 +255,10 @@ def summarise(results: pd.DataFrame) -> str:
         f"mean TE weekly {ok['te_weekly'].mean():.4f} | median TE daily "
         f"{ok['tracking_error'].median():.4f} | median R² weekly {ok['r2_weekly'].median():.3f} | "
         f"median turnover {ok['turnover'].median():.2f} | "
-        f"median holdings {ok['holdings'].median():.1f}"
+        f"median holdings {ok['holdings'].median():.1f} | "
+        f"median TE weekly of the closest single ETF {ok['te_closest'].median():.4f}"
     )
+    lines.append(verdicts(ok))
     return "\n".join(lines)
 
 
