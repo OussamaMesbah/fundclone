@@ -20,7 +20,9 @@ ETF and, as a control, one stock. It is the evidence behind the numbers in the
   - *Fresh set* (23): 5 US large-cap, 3 small/mid-cap, 4 international (one of them an
     emerging markets fund), 1 global, 3 bond, 3 balanced and 3 sector funds and 1 index
     fund. They were picked from well-known funds in each category once development was
-    finished, and run once with the final code. This is the clean test.
+    finished, and run once with the final code. This is the clean test, with one limit:
+    they are other funds, not other years, scored over the same period on which the
+    settings were tuned.
 - **Period.** Clones are scored from January 2010, or three years after a younger fund's
   first price, to September 2026. Estimation data start in 2006.
 - **Clone.** At each month-end the estimator receives the trailing window of daily excess
@@ -41,7 +43,11 @@ ETF and, as a control, one stock. It is the evidence behind the numbers in the
   returns to within 3% of its earlier level within five days is dropped; in this
   snapshot that catches one bad price, BSCFX on 4 January 2010. A jump that does not
   reverse and matches a split ratio is undone as an unadjusted split; there is none in
-  this snapshot.
+  this snapshot. A drop among a fund's last ten returns that its most correlated ETF does
+  not explain and that does not come back looks like a distribution Yahoo has not
+  adjusted for yet, and the fund's figures end the day before. In the snapshot of 14
+  September 2026 that is FLPSX, whose price fell 8.7% on 11 September with no
+  distribution listed; without the check its tracking error would be 3.70%, not 2.93%.
 - **Baseline.** "Before 0.3" fits plain least squares on 252 days to a fixed set of four
   to seven ETFs per type of fund (`LEGACY` in [run.py](run.py)) on raw prices. That is
   how the project, then called FactorLens, worked before version 0.3; its public version
@@ -53,6 +59,7 @@ Fresh set, 23 funds, run once:
 
 | Version | Median tracking error | Mean tracking error | Median R² | Turnover | ETFs |
 |---|---|---|---|---|---|
+| The closest single ETF, picked with hindsight | 4.63% | 4.72% | 0.912 | 0 | 1 |
 | Before 0.3: 4-7 hand-picked ETFs, least squares on 252 days | 3.78% | 4.44% | 0.930 | 0.75 | 2.9 |
 | 81 ETFs, least squares on 252 days | 2.84% | 2.87% | 0.966 | 2.62 | 13.0 |
 | **FundClone 0.3** | **2.89%** | **2.92%** | **0.966** | **1.30** | **7.8** |
@@ -62,7 +69,11 @@ With this few funds the medians are uncertain. A bootstrap over the funds (10,00
 printed by `benchmarks.run`) puts the fresh median of 0.3 at 2.29% to 3.19% (95%) and the
 one before 0.3 at 3.09% to 4.37%. The two ranges overlap; fund by fund, though, 0.3 tracks
 more closely on 22 of the 23 funds, by 0.54 percentage points in the median (95% range
-0.25 to 1.31).
+0.26 to 1.30, printed by `benchmarks.compare`). Against the closest single ETF, picked
+with hindsight as in the app's verdict, the clone tracks more closely on 21 of the 23
+funds, by 1.15 points in the median (0.86 to 2.12), and on 61 of all 64 funds, by 1.27
+points (0.99 to 1.80). The closest-ETF figures come from a rerun on the snapshot of 14
+September 2026, which reproduces the other medians.
 
 Holdout half of the development set, 20 funds:
 
@@ -161,6 +172,42 @@ are three broad US index funds, where four ETFs already do a near-perfect job: V
 | ARKK | Sector | dev | 27.33% | 21.26% | 0.736 | 4.1 | 2.39 |
 | BRK-B | Single stock | holdout | 11.80% | 10.75% | 0.645 | 7.0 | 2.62 |
 
+## Did the funds beat their clones?
+
+The benchmark's 59 active funds, that is all but the index funds and Berkshire Hathaway,
+scored from 2010 to September 2026 after all fees, as the app's verdict would put it. A
+fund is ahead or behind by more than noise when the 95% range of its gap excludes zero.
+From a run on the snapshot of 14 September 2026:
+
+| Against | Ahead | Ahead by more than noise | Behind by more than noise | Median gap a year |
+|---|---|---|---|---|
+| Its clone | 38 | 11 | 1 | +0.30% |
+| The closest single ETF, picked with hindsight | 29 | 6 | 8 | −0.02% |
+
+Two things tilt the comparison with the clone towards the funds. First, the funds were
+picked because they are well known today, so they are survivors, and survivors tend to
+have done well. Second, the clones hold a little too little risk. They keep a median 3% in
+T-bills (13% for bond funds, 12% for balanced funds), and the funds' weekly beta to their
+clone is 1.03 in the median (1.10 for bond funds). Two causes are likely. Daily fund prices,
+especially those of bond funds, which are set from evaluated quotes, follow the market a
+little late, so the fit sees the fund as less sensitive to the ETFs than it is. And the
+clone cannot borrow for a fund that moves more than any mix of ETFs, such as ARKK (beta
+1.48). Index funds, whose prices move in step with the ETFs, show neither: a median of 99%
+invested and a beta of 1.00. In a rising market the missing risk costs the clone about 0.2
+percentage points a year in the median. Measured as alpha against the clone, allowing for
+the beta, 9 funds are ahead by more than noise and 2 behind.
+
+On the dev funds, fitting on overlapping five-day returns (`--overlap 5`), which absorb
+late prices, brings the median beta of the funds to their clones from 1.04 to 1.00, for
+0.05 points more median tracking error (2.98% against 2.93%). Weekly fits do the same at a
+higher cost (3.11%). The default stays as it is for now: changing it moves every published
+number, and the holdout and fresh funds would have to be scored once more.
+
+Against the closest single ETF, the simplest thing an investor could have bought instead,
+the median fund came out level after fees, and about as many funds were behind by more
+than noise as ahead. That ETF is picked with hindsight, as the one that tracked best, not
+as the one that returned most.
+
 ## Is the list of ETFs chosen with hindsight?
 
 The 81 ETFs were picked in 2026 from those that are liquid today, a list nobody could have
@@ -174,8 +221,8 @@ which reproduces the published medians:
 
 | ETFs | Median tracking error, 64 funds | Mean tracking error | Fresh set median |
 |---|---|---|---|
-| All 81 | 2.91% | 3.30% | 2.89% |
-| The 68 that traded by January 2009 | 2.91% | 3.33% | 2.88% |
+| All 81 | 2.91% | 3.29% | 2.89% |
+| The 68 that traded by January 2009 | 2.91% | 3.32% | 2.88% |
 
 Fund by fund, the tracking error rises by 0.01 percentage points in the median (95% range
 0.00 to 0.03). The largest change is Fidelity Contrafund's, from 2.97% to 3.29%. Choosing
@@ -269,7 +316,9 @@ ETFs one by one: with about the same number of ETFs, a 3% minimum tracks about a
 as a cap of eight (median 2.97% against 3.04%, mean 3.81% against 3.80%) and trades half
 as much. Fitting on
 overlapping multi-day returns, which the literature suggests for funds priced at
-different hours, did not help on these funds.
+different hours, did not lower the tracking error on these funds, though it removes most
+of the clones' missing risk (see
+[Did the funds beat their clones?](#did-the-funds-beat-their-clones)).
 
 ## Reproduce
 
@@ -289,7 +338,17 @@ python -m benchmarks.run --split all --window 378 --estimator product --eval-sta
 ```
 
 Add `--out results.csv` to keep the per-fund rows. Yahoo revises its history now and
-then, so a fresh snapshot moves the figures slightly.
+then, so a fresh snapshot moves the figures slightly. Two such files give the fund-by-fund
+comparisons, a median difference with its bootstrap range:
+
+```bash
+python -m benchmarks.run --split all --window 378 --estimator product --out product.csv
+python -m benchmarks.run --split all --universe legacy --raw --out before.csv
+python -m benchmarks.compare before.csv product.csv --split fresh               # before 0.3 minus 0.3
+python -m benchmarks.compare product.csv product.csv --column te_closest --second-column te_weekly --split fresh
+```
+
+The last line sets the closest single ETF against the clone, fund by fund.
 
 ## Try your own estimator
 

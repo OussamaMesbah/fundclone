@@ -30,6 +30,7 @@ from fundclone.data import (
     monthly_returns,
     price_jumps,
     to_usd,
+    unadjusted_distribution,
     weekly_returns,
 )
 from fundclone.estimators import make_estimator
@@ -381,6 +382,15 @@ def _cleaned(
         notes.append(
             f"{label}'s price moved {move:+.0%} on {date:%Y-%m-%d}, close to what an unadjusted "
             f"{kind} would do; earlier prices are adjusted for it."
+        )
+    if found := unadjusted_distribution(cleaned, market):
+        date, move, etf, etf_move = found
+        cleaned = cleaned[cleaned.index < date]
+        notes.append(
+            f"{label}'s price moved {move:+.1%} on {date:%Y-%m-%d} while {etf}, the ETF that "
+            f"follows it most closely, moved {etf_move:+.1%}, and it has not come back. That is "
+            "how a distribution looks before Yahoo Finance adjusts the price history for it, "
+            f"so the figures end on {cleaned.index[-1]:%Y-%m-%d}."
         )
     for date, move in price_jumps(cleaned, market).head(3).items():
         notes.append(

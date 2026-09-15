@@ -49,18 +49,29 @@ def load_drag(load: float, years: float) -> float:
     return 1 - (1 - load) ** (1 / years)
 
 
-def switching(amount: float, unrealised_gain: float, tax_rate: float, saved: float) -> dict:
-    """Tax on selling a fund and how long a yearly saving takes to earn it back.
+def switching(
+    amount: float,
+    unrealised_gain: float,
+    tax_rate: float,
+    saved: float,
+    exit_charge: float = 0.0,
+) -> dict:
+    """What selling a fund costs now, and how long a yearly saving takes to earn it back.
 
-    `unrealised_gain` is the share of `amount` that is gains, `tax_rate` the rate on them
-    and `saved` the yearly saving as a share of `amount`, such as the difference in fees.
-    The tax is mostly paid earlier rather than extra, since selling later would owe it too;
-    in a tax-deferred account there is none.
+    `unrealised_gain` is the share of `amount` that is gains, `tax_rate` the rate on them,
+    `exit_charge` a deferred sales charge still due on selling, as a share of `amount`, and
+    `saved` the yearly saving as a share of `amount`, such as the difference in fees. A
+    front-end load already paid is no part of it: it is gone whether or not the fund is
+    sold. The tax is mostly paid earlier rather than extra, since selling later would owe it
+    too; in a tax-deferred account there is none.
     """
     tax = amount * max(unrealised_gain, 0.0) * max(tax_rate, 0.0)
+    charge = amount * max(exit_charge, 0.0)
     yearly = amount * saved
     return {
         "tax": tax,
+        "exit_charge": charge,
+        "cost": tax + charge,
         "yearly_saving": yearly,
-        "years_to_recover": tax / yearly if yearly > 0 else float("inf"),
+        "years_to_recover": (tax + charge) / yearly if yearly > 0 else float("inf"),
     }

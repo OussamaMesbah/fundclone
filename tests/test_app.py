@@ -122,6 +122,27 @@ def test_switching_shows_the_tax_and_how_long_it_takes_to_earn_it_back(app):
     assert any("trades about" in text and "the 35% the fund reports" in text for text in captions)
 
 
+def test_a_front_end_load_already_paid_does_not_shorten_the_payback(app):
+    app.query_params["ticker"] = "FUND"
+    app.run()
+    widget(app.number_input, "Unrealised gain, % of the amount").set_value(40.0).run()
+    payback = next(element.value for element in app.caption if "to earn back" in element.value)
+    widget(app.number_input, "Front-end load on new money, %").set_value(5.75).run()
+    assert not app.exception
+    captions = [element.value for element in app.caption]
+    assert payback in captions
+    assert any("New money" in text and "0.59% a year" in text for text in captions)
+
+
+def test_a_deferred_sales_charge_is_part_of_the_cost_of_selling(app):
+    app.query_params["ticker"] = "FUND"
+    app.run()
+    widget(app.number_input, "Deferred sales charge if you sell now, %").set_value(1.0).run()
+    assert not app.exception
+    captions = [element.value for element in app.caption]
+    assert any("100 USD in deferred sales charge" in text for text in captions)
+
+
 def test_an_isin_shows_yahoo_symbols_to_choose_from(app, monkeypatch):
     found = [{"symbol": "HJUA.F", "name": "DWS Top Dividende", "type": "ETF", "exchange": "FRA"}]
     monkeypatch.setattr(data, "yahoo_symbols", lambda isin, limit=5: found)

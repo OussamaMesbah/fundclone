@@ -254,6 +254,25 @@ def test_unadjusted_splits_are_undone():
     pd.testing.assert_series_equal(adjusted, fund / 10)
 
 
+def test_a_recent_drop_the_market_does_not_explain_looks_like_an_unadjusted_distribution():
+    dates, common, etfs = market_moves(400, seed=8)
+    noise = np.random.default_rng(9).normal(0, 0.002, 400)
+    fund = pd.Series(100 * np.cumprod(1 + common + noise), dates)
+    assert data.unadjusted_distribution(fund, etfs) is None
+    paid = fund.copy()
+    paid.iloc[-4:] *= 0.91  # paid out 9% three days before the end, and not adjusted
+    date, move, etf, _ = data.unadjusted_distribution(paid, etfs)
+    assert date == dates[-4]
+    assert move == pytest.approx(-0.09, abs=0.03)
+    assert etf in etfs.columns
+    older = fund.copy()
+    older.iloc[-40:] *= 0.91  # long enough ago for Yahoo to have adjusted it
+    assert data.unadjusted_distribution(older, etfs) is None
+    blip = fund.copy()
+    blip.iloc[-4] *= 0.91  # back the next day: a bad price, not a distribution
+    assert data.unadjusted_distribution(blip, etfs) is None
+
+
 def test_interest_is_compounded_over_gaps_and_carried_forward():
     rates = pd.Series(0.001, index=pd.bdate_range("2024-01-01", "2024-01-10"))
     dates = pd.DatetimeIndex(["2024-01-02", "2024-01-05", "2024-01-08", "2024-01-15"])

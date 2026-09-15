@@ -109,9 +109,10 @@ benchmark in the repository).
 
 **Where it comes from.** The clone is returns-based style analysis
 ([Sharpe, 1992]({SHARPE_PAPER})), which explains a fund's returns by a long-only mix of
-asset-class returns. Sharpe fitted the mix once, over the whole history, to describe a
-fund's style. FundClone refits it every month from past data only, on ETFs you can buy,
-so the clone is one you could have held in real time.
+asset-class returns. To judge performance, Sharpe re-estimated the mix every month from
+the previous 60 months, so each month's benchmark used only earlier data. FundClone does
+the same with ETFs you can buy, on daily returns and with trading costs, so the clone is
+one you could have held in real time.
 
 **Out of sample, always.** The clone's weights on any day come only from data before
 that day. Tracking error, R² and the fund-minus-clone return are measured on these
@@ -148,9 +149,11 @@ expected.
 
 **What the figures leave out.** The fund's returns follow its net asset value: after its
 expense ratio, but before any sales load and before tax. Where a share class name implies
-a load, the verdict says so. Under the clone, "Switching from the fund" turns a load, the
-gains you would realise and your tax rate into numbers, and compares how much the clone
-trades with what the fund reports.
+a load, the verdict says so. Under the clone, "Switching from the fund" turns a deferred
+sales charge, the gains you would realise and your tax rate into the cost of selling now,
+and sets it against the lower fees. A front-end load already paid is gone either way, so
+it counts only for new money. The section also compares how much the clone trades with
+what the fund reports.
 
 **Factor exposures.** A second, academic view regresses the fund's monthly excess returns
 on the Fama-French five factors and momentum, with term and credit factors for funds
@@ -696,19 +699,33 @@ def render_verdict(a: Analysis) -> None:
 
 
 def render_switching(a: Analysis, amount: float, years: int) -> None:
-    """What leaving the fund for the clone costs: its sales load, the tax on realised gains
-    and the trading the clone does from then on."""
-    with st.expander("Switching from the fund: load, tax and trading"):
-        # one below the other: the column is too narrow for three inputs side by side
+    """What leaving the fund for the clone costs: a deferred sales charge and the tax on
+    realised gains, set against the lower fees, and the trading the clone does from then
+    on. A front-end load counts only for new money: money in the fund has paid it."""
+    with st.expander("Switching from the fund: loads, tax and trading"):
+        # one below the other: the column is too narrow for several inputs side by side
         load = (
             st.number_input(
-                "Sales load paid, %",
+                "Front-end load on new money, %",
                 0.0,
                 10.0,
                 0.0,
                 step=0.25,
                 help="A front-end load is not in the fund's returns here, which follow its net "
-                "asset value. Class A shares of stock funds often charge up to 5.75%.",
+                "asset value. Class A shares of stock funds often charge up to 5.75%. Money "
+                "already in the fund has paid it, so it does not count for switching.",
+            )
+            / 100
+        )
+        exit_charge = (
+            st.number_input(
+                "Deferred sales charge if you sell now, %",
+                0.0,
+                10.0,
+                0.0,
+                step=0.25,
+                help="Class C shares, and some Class A shares bought without a load, charge "
+                "this when sold within the first year or so.",
             )
             / 100
         )
@@ -728,24 +745,35 @@ def render_switching(a: Analysis, amount: float, years: int) -> None:
 
         if load > 0:
             st.caption(
-                f"A {load:.2%} sales load on {amount:,.0f} USD costs {amount * load:,.0f} USD up "
-                f"front, as much as {load_drag(load, years):.2%} a year over {years} years."
+                f"New money in the fund at a {load:.2%} load: {amount * load:,.0f} USD of "
+                f"{amount:,.0f} goes to the load, as much as {load_drag(load, years):.2%} a year "
+                f"over {years} years on top of the fees. Money already in the fund has paid its "
+                "load, so switching does not save it."
             )
-        saved = a.expense_ratio + load_drag(load, years) - a.clone_expense_ratio
-        result = switching(amount, gain, rate, saved)
-        if result["tax"] > 0:
-            lines = [
-                f"Selling the fund would realise {amount * gain:,.0f} USD of gains and cost about "
-                f"{result['tax']:,.0f} USD in tax."
-            ]
+        saved = a.expense_ratio - a.clone_expense_ratio
+        result = switching(amount, gain, rate, saved, exit_charge)
+        if result["cost"] > 0:
+            parts = []
+            if result["tax"] > 0:
+                parts.append(
+                    f"about {result['tax']:,.0f} USD in tax on {amount * gain:,.0f} USD of gains"
+                )
+            if result["exit_charge"] > 0:
+                parts.append(f"{result['exit_charge']:,.0f} USD in deferred sales charge")
+            lines = [f"Selling the fund now would cost {' and '.join(parts)}."]
             if saved > 0:
                 lines.append(
-                    f"The clone saves about {result['yearly_saving']:,.0f} USD a year, so the tax "
-                    f"takes about {result['years_to_recover']:.1f} years to earn back. Most of it "
-                    "is paid earlier rather than extra: selling the fund later would owe it too."
+                    f"The clone's lower fees save about {result['yearly_saving']:,.0f} USD a "
+                    f"year, so that takes about {result['years_to_recover']:.1f} years to "
+                    "earn back."
                 )
             else:
                 lines.append("The clone costs no less than the fund, so nothing earns it back.")
+            if result["tax"] > 0:
+                lines.append(
+                    "Most of the tax is paid earlier rather than extra: selling the fund later "
+                    "would owe it too."
+                )
         else:
             lines = [
                 "With no unrealised gain, or in a tax-deferred account such as a 401(k) or an "

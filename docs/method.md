@@ -1,12 +1,17 @@
 # How FundClone works
 
 FundClone builds on returns-based style analysis (Sharpe, 1992): a fund's returns are
-explained by a long-only mix of asset-class returns. Sharpe fitted that mix once, over the
-whole history, to describe a fund's style. FundClone refits it every month from past data
-only, on ETFs that can be bought, holds the result until the next month, and measures how
-closely it followed the fund and what the fund returned beyond it. This document lists
-every step with the parameters the code uses. The benchmark behind the published numbers
-is described in [benchmarks/README.md](../benchmarks/README.md).
+explained by a long-only mix of asset-class returns. To measure performance, Sharpe
+re-estimated the mix each month from the previous 60 months, so that the benchmark for a
+month used only earlier data, and called the fund's return beyond it selection.
+Hasanhodzic and Lo (2007) applied the same rolling-window idea to hedge funds and called
+the result a linear clone. FundClone keeps the design and changes the ingredients: ETFs
+that can be bought instead of asset-class indices, daily returns over 18 months weighted
+towards recent days, a day's delay before trading, and trading costs. It holds the
+result until the next month and measures how closely it followed the fund and what the
+fund returned beyond it. This document lists every step with the parameters the code
+uses. The benchmark behind the published numbers is described in
+[benchmarks/README.md](../benchmarks/README.md).
 
 ## 1. Data
 
@@ -39,6 +44,12 @@ alone, because their jumps are often real.
 - **Unadjusted splits.** A move of more than 45% that does not reverse and matches a split
   ratio (2, 3, 4, 5, 8, 10, 15, 20, 25, 30, 40, 50 or 100, or its inverse) is undone as an
   unadjusted split. Other large unreversed moves are reported and left in.
+- **Distributions Yahoo has not adjusted yet.** On the day a fund pays out, its price falls
+  by the amount paid. Yahoo sometimes takes days to adjust the earlier prices, or does not
+  list the distribution at all. If one of the last ten returns falls short of what the
+  most correlated ETF predicts (with the fund's beta to it over the previous year) by more
+  than 3% and more than eight typical deviations, and the following days do not undo half
+  of it, the figures end the day before.
 
 Every change appears as a note in the app and on the command line.
 
@@ -136,7 +147,9 @@ error.
 - **Closet-index screen.** For clones that are at least 70% equity: tracking error below
   3%, $R^2$ above 95% (the squared correlation) and beta between 0.95 and 1.05 against the
   closest single ETF. The thresholds come from an ESMA working paper (Danieli, Harris and
-  Pichini, 2020), which applied them against each fund's own benchmark.
+  Pichini, 2020), which applied them year by year, to figures from monthly returns, against
+  each fund's own benchmark. FundClone applies them once, to all weekly out-of-sample
+  returns.
 
 ## 7. Factor attribution
 
@@ -158,13 +171,15 @@ sales load and before tax (`fundclone/costs.py`).
 - **Fees over a horizon.** On an amount $A$ growing 6% a year before fees, an expense ratio
   $e$ takes $A \cdot 1.06^Y \left(1 - (1 - e)^Y\right)$ over $Y$ years.
 - **Sales loads.** Yahoo Finance reports none, so the app warns when a share class name
-  implies one (Class A, C or T). A load $l$ paid once costs $1 - (1 - l)^{1/Y}$ a year over
-  $Y$ years: 5.75% over ten years is 0.59% a year.
+  implies one (Class A, C or T). For new money, a load $l$ paid once costs
+  $1 - (1 - l)^{1/Y}$ a year over $Y$ years: 5.75% over ten years is 0.59% a year. Money
+  already in the fund has paid its load, which is gone whether or not the fund is sold, so
+  it plays no part in switching.
 - **Switching.** Selling the fund realises gains $A \cdot G$ and costs $A \cdot G \cdot \tau$
-  in tax at a rate $\tau$. The yearly saving is $A$ times the fund's expense ratio plus the
-  load's yearly cost minus the clone's expense ratio, and the tax takes tax over saving
-  years to earn back. Most of that tax is paid earlier rather than extra, since selling
-  later would owe it too; in a tax-deferred account there is none.
+  in tax at a rate $\tau$, plus $A \cdot d$ where a deferred sales charge $d$ is still due.
+  The yearly saving is $A$ times the fund's expense ratio minus the clone's, and the cost
+  takes cost over saving years to earn back. Most of the tax is paid earlier rather than
+  extra, since selling later would owe it too; in a tax-deferred account there is none.
 - **Trading.** The app sets the clone's turnover, with buys and sells counted once each,
   against the turnover the fund reports.
 
@@ -174,12 +189,19 @@ sales load and before tax (`fundclone/costs.py`).
   leaves every earlier clone return unchanged, that weekly fits stay causal, that ETFs
   join only with a full window, and that only returns after the first trade are reported.
 - The benchmark scored 23 funds picked after development was finished, once, with the
-  final code. It reports bootstrap ranges for its medians, and a rerun limited to the 68
-  ETFs that already traded in January 2009 leaves the median tracking error unchanged.
+  final code. It reports bootstrap ranges for its medians, `benchmarks.compare` gives them
+  for fund-by-fund comparisons, and a rerun limited to the 68 ETFs that already traded in
+  January 2009 leaves the median tracking error unchanged.
+- The fresh funds are other funds, not other years: the settings were tuned on the dev
+  funds over the same period. Seven quite different estimators ended within 0.15
+  percentage points of each other, so the settings matter little, but only data after
+  September 2026 can test other years.
 
 ## 10. Limitations
 
-Stock selection cannot be cloned from returns; UCITS ETFs suit only funds priced in
+Stock selection cannot be cloned from returns; the clone tends to hold a little less risk
+than the fund (on the benchmark a median 3% in T-bills, and a beta of the fund to its clone
+of 1.03), which flatters the fund in rising markets; UCITS ETFs suit only funds priced in
 European hours; the ETF list was
 picked in 2026 and closed ETFs are missing from it; only funds that still exist can be
 analysed; Yahoo Finance data has gaps and errors and is licensed for personal use; the
@@ -197,6 +219,8 @@ French factors lag by one to two months and are paper portfolios. The
   bonds. *Journal of Financial Economics*, 33(1), 3–56.
 - Fama, E. F., and French, K. R. (2015). A five-factor asset pricing model. *Journal of
   Financial Economics*, 116(1), 1–22.
+- Hasanhodzic, J., and Lo, A. W. (2007). Can hedge-fund returns be replicated?: The linear
+  case. *Journal of Investment Management*, 5(2), 5–45.
 - Newey, W. K., and West, K. D. (1987). A simple, positive semi-definite, heteroskedasticity
   and autocorrelation consistent covariance matrix. *Econometrica*, 55(3), 703–708.
 - Newey, W. K., and West, K. D. (1994). Automatic lag selection in covariance matrix

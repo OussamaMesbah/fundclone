@@ -57,3 +57,10 @@ def test_switching_costs_tax_now_and_pays_it_back_from_the_yearly_saving():
 def test_switching_without_a_saving_never_pays_off_and_without_gains_costs_nothing():
     assert math.isinf(switching(10_000, 0.4, 0.15, 0.0)["years_to_recover"])
     assert switching(10_000, 0.0, 0.15, 0.005)["tax"] == 0.0
+
+
+def test_a_deferred_sales_charge_adds_to_the_cost_of_selling():
+    result = switching(10_000, 0.4, 0.15, 0.005, exit_charge=0.01)
+    assert result["exit_charge"] == pytest.approx(100)
+    assert result["cost"] == pytest.approx(700)
+    assert result["years_to_recover"] == pytest.approx(14)

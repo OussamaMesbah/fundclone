@@ -68,6 +68,10 @@ ERROR_FLOOR = 0.15
 ERROR_SIGMAS = 8.0
 JUMP_FLOOR = 0.45  # unreversed moves this large are reported, or undone if they fit a split
 SPLIT_FACTORS = (2, 3, 4, 5, 8, 10, 15, 20, 25, 30, 40, 50, 100)
+# A drop among the last DISTRIBUTION_DAYS returns that the market does not explain and that
+# does not come back looks like a distribution Yahoo Finance has not adjusted for yet.
+DISTRIBUTION_DAYS = 10
+DISTRIBUTION_FLOOR = 0.03
 
 _DATE_KEY = re.compile(r"\d{6}|\d{8}")
 _MISSING_VALUES = [-99.99, -999.0]
@@ -551,6 +555,44 @@ def adjust_splits(
             prices = prices.where(prices.index >= date, prices * factor)
             splits.append((date, factor, float(move)))
     return prices, splits
+
+
+def unadjusted_distribution(
+    prices: pd.Series,
+    market_returns: pd.DataFrame,
+    days: int = DISTRIBUTION_DAYS,
+    floor: float = DISTRIBUTION_FLOOR,
+    window: int = 252,
+) -> tuple[pd.Timestamp, float, str, float] | None:
+    """A recent drop that looks like a distribution Yahoo Finance has not adjusted for yet.
+
+    On the day a fund pays out, its price falls by the amount paid. Yahoo usually adjusts
+    the earlier prices within days; until then the fall looks like a loss, and Yahoo may not
+    list the distribution at all (FLPSX on 11 September 2026). Among the last `days`
+    returns, this finds the first that falls short of what the reference ETF most correlated
+    with the fund over the previous `window` returns predicts, by more than `floor` and by
+    ERROR_SIGMAS typical deviations, and that the following days do not undo by half.
+    Returns its date, the fund's move, that ETF and the ETF's move, or None.
+    """
+    fund = (prices / prices.shift(1) - 1).iloc[1:]
+    if len(fund) < window + days:
+        return None
+    market = market_returns.reindex(fund.index)
+    past, recent = fund.index[-window - days : -days], fund.index[-days:]
+    correlations = market.loc[past].dropna(axis=1).corrwith(fund.loc[past]).dropna()
+    if correlations.empty:
+        return None
+    etf = str(correlations.idxmax())
+    moves = market[etf].fillna(0.0)
+    beta = fund.loc[past].cov(moves.loc[past]) / moves.loc[past].var()
+    residual = fund - beta * moves
+    typical = _ROBUST_SIGMA * float(residual.loc[past].abs().median())
+    limit = max(floor, ERROR_SIGMAS * typical)
+    for i, date in enumerate(recent):
+        drop = -residual[date]
+        if drop > limit and residual.loc[recent[i + 1 :]].sum() < drop / 2:
+            return date, float(fund[date]), etf, float(moves[date])
+    return None
 
 
 def daily_returns(prices: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
