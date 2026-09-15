@@ -7,8 +7,8 @@ authors:
     given-names: Oussama
 repository-code: "https://github.com/OussamaMesbah/fundclone"
 url: "https://fundclone.streamlit.app"
-version: 0.5.0
-date-released: 2026-09-14
+version: 0.6.0
+date-released: 2026-09-15
 license: MIT
 keywords:
   - portfolio replication
