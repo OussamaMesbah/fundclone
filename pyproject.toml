@@ -38,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 app = ["pdfminer.six>=20260107", "plotly>=5.20", "streamlit>=1.56"]
-dev = ["pyarrow>=14", "pytest>=8", "ruff==0.16.7"]  # pinned: CI checks the formatting
+dev = ["pyarrow>=14", "pytest>=8", "ruff==0.16.9"]  # pinned: CI checks the formatting
 
 [project.scripts]
 fundclone = "fundclone.cli:main"

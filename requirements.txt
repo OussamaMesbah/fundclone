@@ -38,7 +38,7 @@ h11==0.16.0
     # via uvicorn
 httptools==0.8.0
     # via streamlit
-idna==3.19
+idna==3.20
     # via
     #   anyio
     #   requests
@@ -94,15 +94,15 @@ patsy==1.0.3
     # via statsmodels
 pdfminer-six==20260107
     # via fundclone (pyproject.toml)
-peewee==4.5.1
+peewee==4.5.2
     # via yfinance
 pillow==12.3.0
     # via streamlit
-platformdirs==4.11.8
+platformdirs==4.12.0
     # via yfinance
-plotly==7.0.0
+plotly==7.1.0
     # via fundclone (pyproject.toml)
-protobuf==7.36.1
+protobuf==7.36.2
     # via
     #   streamlit
     #   yfinance
@@ -116,7 +116,7 @@ python-dateutil==2.9.0.post0
     # via pandas
 python-multipart==0.0.32
     # via streamlit
-pytz==2026.3.post1
+pytz==2026.4
     # via yfinance
 referencing==0.37.0
     # via
@@ -138,13 +138,13 @@ scipy==1.18.1
     #   statsmodels
 six==1.17.0
     # via python-dateutil
-soupsieve==2.9.2
+soupsieve==2.10
     # via beautifulsoup4
-starlette==1.6.0
+starlette==1.7.0
     # via streamlit
 statsmodels==0.15.0
     # via fundclone (pyproject.toml)
-streamlit==1.63.0
+streamlit==1.64.0
     # via fundclone (pyproject.toml)
 toml==0.10.2
     # via streamlit
@@ -157,15 +157,15 @@ typing-extensions==4.16.0
     #   referencing
     #   starlette
     #   streamlit
-urllib3==2.7.0
+urllib3==2.8.0
     # via requests
-uvicorn==0.52.4
+uvicorn==0.54.0
     # via streamlit
 websockets==16.1.1
     # via
     #   streamlit
     #   yfinance
-wrapt==2.4.1
+wrapt==2.5.0
     # via formulaic
 yfinance==1.7.0
     # via fundclone (pyproject.toml)
